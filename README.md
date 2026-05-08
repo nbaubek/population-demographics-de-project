@@ -17,4 +17,6 @@ The idea is to build a system that models *population characteristics* across ge
 1. 3 APIs one of which serves as the backbone, the other 2 are for enrichment. 
 2. graph model, dashboard, kepler.gl, etc.
 
+[Kepler GL](https://kepler.gl/)
+
 ## Data Modeling
