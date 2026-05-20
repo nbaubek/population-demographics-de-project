@@ -74,17 +74,22 @@ def _build_silver_tiger_asset(geography: str):
                 intptlon STRING,
                 geometry_wkt STRING
             )
-            WITH (
-                table_type = 'ICEBERG',
-                format = 'PARQUET',
-                write_compression = 'SNAPPY',
-                is_external = false,
-                partitioning = ARRAY['survey_year'],
-                location = '{silver_location}'
+            PARTITIONED BY (survey_year)
+            LOCATION '{silver_location}'
+            TBLPROPERTIES (
+                'table_type'='ICEBERG',
+                'format'='parquet',
+                'write_compression'='snappy'
             )
             """
-            athena.execute_query(query=create_iceberg_sql)
-            context.log.info(f"Created Iceberg table {SILVER_DB}.silver_tiger_{geography}")
+            try:
+                athena.execute_query(query=create_iceberg_sql)
+                context.log.info(f"Created Iceberg table {SILVER_DB}.silver_tiger_{geography}")
+            except Exception as e:
+                if "already exists" in str(e).lower():
+                    context.log.info(f"Iceberg table {SILVER_DB}.silver_tiger_{geography} already exists, skipping creation")
+                else:
+                    raise
 
         # Create external table over bronze parquet for this year
         ext_table_name = f"bronze_tiger_{geography}_ext_{year}"
@@ -104,7 +109,7 @@ def _build_silver_tiger_asset(geography: str):
             INTPTLAT STRING,
             INTPTLON STRING,
             geometry_wkt STRING,
-            survey_year STRING,
+            survey_year BIGINT,
             ingest_date STRING
         )
         STORED AS PARQUET
@@ -116,7 +121,7 @@ def _build_silver_tiger_asset(geography: str):
         INSERT INTO {SILVER_DB}.silver_tiger_{geography}
         SELECT
             GEOID AS geography_id,
-            CAST(survey_year AS INT) AS survey_year,
+            survey_year AS survey_year,
             NAME AS geography_name,
             STATEFP AS state_fips,
             COUNTYFP AS county_fips,

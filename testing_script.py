@@ -1,293 +1,214 @@
-"""Data quality and schema analysis for Census demographics pipeline.
+"""Bronze layer data quality inspection using DuckDB + Polars.
 
-Checks schemas, nulls, composite key uniqueness, and join readiness
-across bronze, silver, and gold Iceberg tables.
+Reads parquet files directly from S3 to inspect schema, row counts,
+nulls, and sample data across year and geography partitions.
+
+Usage:
+    python testing_script.py                              # tracts: CA (06), all years
+    python testing_script.py --tiger-state 48            # tracts: TX
+    python testing_script.py --year-start 2020 --year-end 2024  # limit years
+    python testing_script.py --nulls-only                 # only null analysis
 """
 
-import os
+import argparse
 from datetime import date
 
-import boto3
+import duckdb
 import polars as pl
 
 
-ATHENA_REGION = "us-east-1"
-WORKGROUP = "population-demographics"
-BRONZE_DB = "population_demographics"
-SILVER_DB = "population_demographics_silver"
-GOLD_DB = "population_demographics_gold"
-
 S3_BUCKET = "s3://population-demographics-iceberg"
+DEFAULT_TRACT_STATE = "06"
 
 
-def get_athena_client():
-    return boto3.client("athena", region_name=ATHENA_REGION)
+def get_s3_creds() -> dict:
+    """Get AWS credentials via boto3 default chain."""
+    import boto3
+    session = boto3.Session()
+    creds = session.get_credentials()
+    if not creds:
+        return {}
+    frozen = creds.get_frozen_credentials()
+    return {
+        "access_key_id": frozen.access_key,
+        "secret_access_key": frozen.secret_key,
+        "session_token": frozen.token or "",
+        "region": session.region_name or "us-east-1",
+    }
 
 
-def run_athena_query(query: str, db: str = None) -> list[dict]:
-    """Execute Athena query and return results as list of dicts."""
-    client = get_athena_client()
-    context = {"Database": db} if db else {}
-    response = client.start_query_execution(
-        QueryString=query,
-        QueryExecutionContext=context,
-        ResultConfiguration={"OutputLocation": f"{S3_BUCKET}/athena-results/"},
-        WorkGroup=WORKGROUP,
-    )
-    execution_id = response["QueryExecutionId"]
-
-    import time
-    for _ in range(120):
-        state = client.get_query_execution(QueryExecutionId=execution_id)["QueryExecution"]["Status"]["State"]
-        if state == "SUCCEEDED":
-            break
-        elif state == "FAILED":
-            reason = client.get_query_execution(QueryExecutionId=execution_id)["QueryExecution"]["Status"].get("AthenaError", {})
-            raise RuntimeError(f"Query failed: {reason}")
-        time.sleep(2)
-
-    result = client.get_query_results(QueryExecutionId=execution_id)
-    rows = result["ResultSet"]["Rows"]
-    if not rows:
-        return []
-
-    headers = [col["VarCharValue"] for col in rows[0]["Data"]]
-    data = []
-    for row in rows[1:]:
-        data.append({headers[i]: row["Data"][i].get("VarCharValue", "") for i in range(len(headers))})
-    return data
-
-
-def print_section(title):
-    print(f"\n{'=' * 80}")
-    print(f"  {title}")
-    print(f"{'=' * 80}")
-
-
-def analyze_table_schema(db: str, table: str) -> dict | None:
-    """Get column schema for a table."""
-    query = f"""
-    SELECT column_name, data_type
-    FROM information_schema.columns
-    WHERE table_schema = '{db}' AND table_name = '{table}'
-    ORDER BY ordinal_position
-    """
+def read_bronze(path: str, creds: dict) -> pl.DataFrame | None:
+    """Read bronze parquet using DuckDB with direct S3 access."""
     try:
-        rows = run_athena_query(query)
-        return {r["column_name"]: r["data_type"] for r in rows}
+        con = duckdb.connect()
+        try:
+            con.install_extension("httpfs")
+            con.load_extension("httpfs")
+        except Exception:
+            pass
+        con.execute(f"SET s3_access_key_id='{creds['access_key_id']}'")
+        con.execute(f"SET s3_secret_access_key='{creds['secret_access_key']}'")
+        if creds.get("session_token"):
+            con.execute(f"SET s3_session_token='{creds['session_token']}'")
+        con.execute(f"SET s3_region='{creds['region']}'")
+        df = con.execute(f"SELECT * FROM read_parquet('{path}')").df()
+        con.close()
+        return pl.DataFrame(df)
     except Exception as e:
         return None
 
 
-def table_row_count(db: str, table: str, where_clause: str = "") -> int:
-    """Get total row count for a table with optional where clause."""
-    query = f"SELECT COUNT(*) as cnt FROM {db}.{table}"
-    if where_clause:
-        query += f" WHERE {where_clause}"
-    try:
-        result = run_athena_query(query)
-        return int(result[0]["cnt"]) if result else 0
-    except Exception:
-        return 0
+def print_header(title: str):
+    print(f"\n{'=' * 90}")
+    print(f"  {title}")
+    print(f"{'=' * 90}")
 
 
-def null_check(db: str, table: str, columns: list[str]) -> dict:
-    """Check null counts for specified columns."""
-    null_checks = [f"COUNT(*) FILTER (WHERE {col} IS NULL) as null_{col}" for col in columns]
-    query = f"SELECT {', '.join(null_checks)} FROM {db}.{table}"
-    try:
-        result = run_athena_query(query)
-        return {k.replace("null_", ""): int(v) for k, v in result[0].items() if v}
-    except Exception as e:
-        return {"error": str(e)}
+def check_dataset(name: str, paths: list[str], creds: dict):
+    """Check a dataset: print row counts per year and sample."""
+    print(f"\n  -- {name} --")
+    for path in paths:
+        year = path.split("year=")[1].split("/")[0] if "year=" in path else "?"
+        state = path.split("state=")[1].split("/")[0] if "state=" in path else ""
+        label = f"{year}" + (f" ({state})" if state else "")
+        df = read_bronze(path, creds)
+        if df is None:
+            print(f"    {label}: FAILED (path not found or access denied)")
+            continue
+        print(f"    {label}: {len(df)} rows x {len(df.columns)} cols")
+        if len(df) > 0:
+            sample = df.head(3).to_pandas().to_string(index=False).split("\n")
+            for line in sample:
+                print(f"      {line}")
 
 
-def sample_values(db: str, table: str, col: str, limit: int = 5) -> list:
-    """Get sample values from a column."""
-    query = f'SELECT DISTINCT {col} FROM {db}.{table} LIMIT {limit}'
-    try:
-        result = run_athena_query(query)
-        return [r[col] for r in result]
-    except Exception:
-        return []
-
-
-def check_composite_key_duplicates(db: str, table: str, col1: str, col2: str, limit: int = 10) -> dict:
-    """Check for duplicate composite keys."""
-    query = f"""
-    SELECT {col1}, {col2}, COUNT(*) as cnt
-    FROM {db}.{table}
-    GROUP BY {col1}, {col2}
-    HAVING COUNT(*) > 1
-    LIMIT {limit}
-    """
-    try:
-        result = run_athena_query(query)
-        return {"has_duplicates": len(result) > 0, "duplicates": result}
-    except Exception as e:
-        return {"has_duplicates": None, "error": str(e)}
-
-
-def check_key_joinability(db1: str, t1: str, db2: str, t2: str, key_col: str, year: str) -> dict:
-    """Check if keys match between two tables for a given year."""
-    query = f"""
-    SELECT COUNT(DISTINCT a.{key_col}) as acs_keys,
-           COUNT(DISTINCT b.{key_col}) as tiger_keys,
-           COUNT(DISTINCT CASE WHEN b.{key_col} IS NOT NULL THEN a.{key_col} END) as matched_keys
-    FROM {db1}.{t1} a
-    JOIN {db2}.{t2} b
-        ON a.{key_col} = b.{key_col}
-        AND a.survey_year = b.survey_year
-    WHERE a.survey_year = '{year}'
-    """
-    try:
-        result = run_athena_query(query)
-        if result:
-            r = result[0]
-            return {
-                "acs_keys": int(r["acs_keys"]),
-                "tiger_keys": int(r["tiger_keys"]),
-                "matched_keys": int(r["matched_keys"]),
-                "match_rate": round(int(r["matched_keys"]) / max(int(r["acs_keys"]), 1) * 100, 1),
-            }
-    except Exception as e:
-        return {"error": str(e)}
-    return {}
+def null_analysis(name: str, path: str, cols: list[str], creds: dict):
+    """Null analysis on key columns."""
+    df = read_bronze(path, creds)
+    if df is None:
+        print(f"    {name}: FAILED")
+        return
+    total = len(df)
+    print(f"    {name} ({total} rows):")
+    for c in cols:
+        if c in df.columns:
+            nulls = int(df[c].is_null().sum())
+            null_pct = nulls / max(total, 1) * 100
+            flag = "  ⚠ NULLS" if nulls > 0 else ""
+            print(f"      {c:30s}: {nulls:6d} null ({null_pct:5.1f}%){flag}")
 
 
 def main():
-    print(f"\n{'#' * 80}")
-    print("# CENSUS DEMOGRAPHICS PIPELINE - DATA QUALITY REPORT")
-    print(f"# Run date: {date.today()}")
-    print(f"{'#' * 80}")
+    parser = argparse.ArgumentParser(description="Inspect bronze layer parquet files via DuckDB")
+    parser.add_argument(
+        "--tiger-state",
+        type=str,
+        default=DEFAULT_TRACT_STATE,
+        help=f"FIPS code for tract-level inspection (default: {DEFAULT_TRACT_STATE})",
+    )
+    parser.add_argument(
+        "--year-start", type=int, default=2012, help="Start year (default: 2012)"
+    )
+    parser.add_argument(
+        "--year-end", type=int, default=2024, help="End year (default: 2024)"
+    )
+    parser.add_argument(
+        "--nulls-only", action="store_true", help="Only run null analysis"
+    )
+    args = parser.parse_args()
 
-    # --- BRONZE SCHEMA CHECK ---
-    print_section("BRONZE LAYER - SCHEMA")
-    bronze_tables = [
-        ("bronze_acs5_states", BRONZE_DB),
-        ("bronze_acs5_counties", BRONZE_DB),
-        ("bronze_acs5_tracts", BRONZE_DB),
-        ("bronze_tiger_states", BRONZE_DB),
-        ("bronze_tiger_counties", BRONZE_DB),
-        ("bronze_tiger_tracts", BRONZE_DB),
+    creds = get_s3_creds()
+    if not creds.get("access_key_id"):
+        print("ERROR: No AWS credentials found. Set via aws configure or environment variables.")
+        return
+
+    years = list(range(args.year_start, args.year_end + 1))
+    state = args.tiger_state
+
+    print(f"\n{'=' * 90}")
+    print(f"  BRONZE LAYER INSPECTION")
+    print(f"  Date: {date.today()}")
+    print(f"  Years: {args.year_start}-{args.year_end}")
+    print(f"  Tract state: {state}")
+    print(f"{'=' * 90}")
+
+    # --- ACS BRONZE ---
+    print_header("ACS BRONZE (states, counties, tracts)")
+    check_dataset(
+        "ACS States (all years)",
+        [f"{S3_BUCKET}/bronze/census_acs5/states/year={y}/states.parquet" for y in years],
+        creds,
+    )
+    check_dataset(
+        "ACS Counties (all years)",
+        [f"{S3_BUCKET}/bronze/census_acs5/counties/year={y}/counties.parquet" for y in years],
+        creds,
+    )
+    check_dataset(
+        f"ACS Tracts {state} (all years)",
+        [f"{S3_BUCKET}/bronze/census_acs5/tracts/year={y}/state={state}/tracts.parquet" for y in years],
+        creds,
+    )
+
+    # --- TIGER BRONZE ---
+    print_header("TIGER BRONZE (states, counties, tracts)")
+    check_dataset(
+        "TIGER States (all years)",
+        [f"{S3_BUCKET}/bronze/tiger/states/year={y}/states.parquet" for y in years],
+        creds,
+    )
+    check_dataset(
+        "TIGER Counties (all years)",
+        [f"{S3_BUCKET}/bronze/tiger/counties/year={y}/counties.parquet" for y in years],
+        creds,
+    )
+    check_dataset(
+        f"TIGER Tracts {state} (all years)",
+        [f"{S3_BUCKET}/bronze/tiger/tracts/year={y}/state={state}/tracts.parquet" for y in years],
+        creds,
+    )
+
+    # --- NULL ANALYSIS ---
+    print_header("NULL ANALYSIS (first year only)")
+    sample_year = years[0]
+    null_checks = [
+        (
+            "ACS States",
+            f"{S3_BUCKET}/bronze/census_acs5/states/year={sample_year}/states.parquet",
+            ["survey_year", "ingest_date", "NAME"],
+        ),
+        (
+            "ACS Counties",
+            f"{S3_BUCKET}/bronze/census_acs5/counties/year={sample_year}/counties.parquet",
+            ["survey_year", "ingest_date", "NAME"],
+        ),
+        (
+            f"ACS Tracts {state}",
+            f"{S3_BUCKET}/bronze/census_acs5/tracts/year={sample_year}/state={state}/tracts.parquet",
+            ["survey_year", "ingest_date", "NAME"],
+        ),
+        (
+            "TIGER States",
+            f"{S3_BUCKET}/bronze/tiger/states/year={sample_year}/states.parquet",
+            ["survey_year", "ingest_date", "GEOID"],
+        ),
+        (
+            "TIGER Counties",
+            f"{S3_BUCKET}/bronze/tiger/counties/year={sample_year}/counties.parquet",
+            ["survey_year", "ingest_date", "GEOID"],
+        ),
+        (
+            f"TIGER Tracts {state}",
+            f"{S3_BUCKET}/bronze/tiger/tracts/year={sample_year}/state={state}/tracts.parquet",
+            ["survey_year", "ingest_date", "GEOID"],
+        ),
     ]
+    for name, path, cols in null_checks:
+        null_analysis(name, path, cols, creds)
 
-    for table, db in bronze_tables:
-        schema = analyze_table_schema(db, table)
-        if schema is None:
-            print(f"\n  [SKIP] {table} - does not exist")
-            continue
-        print(f"\n  {table}:")
-        print(f"    Columns ({len(schema)}): {', '.join(schema.keys())}")
-        missing_cols = []
-        if "survey_year" not in schema:
-            missing_cols.append("survey_year")
-        if "ingest_date" not in schema:
-            missing_cols.append("ingest_date")
-        if missing_cols:
-            print(f"    [WARN] Missing columns: {missing_cols}")
-
-    # --- SILVER SCHEMA CHECK ---
-    print_section("SILVER LAYER - SCHEMA")
-    silver_tables = [
-        ("silver_acs5_states", SILVER_DB),
-        ("silver_acs5_counties", SILVER_DB),
-        ("silver_acs5_tracts", SILVER_DB),
-        ("silver_tiger_states", SILVER_DB),
-        ("silver_tiger_counties", SILVER_DB),
-        ("silver_tiger_tracts", SILVER_DB),
-    ]
-
-    for table, db in silver_tables:
-        schema = analyze_table_schema(db, table)
-        if schema is None:
-            print(f"\n  [SKIP] {table} - does not exist")
-            continue
-        print(f"\n  {table}:")
-        print(f"    Columns ({len(schema)}): {', '.join(schema.keys())}")
-
-        # Check key columns
-        for col in ["geography_id", "survey_year"]:
-            if col in schema:
-                print(f"    {col}: {schema[col]}")
-            else:
-                print(f"    [WARN] Missing: {col}")
-
-        # Row count
-        total = table_row_count(db, table)
-        print(f"    Total rows: {total}")
-
-        # Null check
-        nulls = null_check(db, table, ["geography_id", "survey_year"])
-        if nulls:
-            for col, cnt in nulls.items():
-                if cnt > 0:
-                    print(f"    [WARN] Null {col}: {cnt}")
-
-    # --- SILVER KEY JOINABILITY (sample year) ---
-    print_section("SILVER LAYER - KEY JOINABILITY (2021)")
-
-    for geography in ["states", "counties", "tracts"]:
-        acs_table = f"silver_acs5_{geography}"
-        tiger_table = f"silver_tiger_{geography}"
-        result = check_key_joinability(SILVER_DB, acs_table, SILVER_DB, tiger_table, "geography_id", "2021")
-        print(f"\n  {geography}:")
-        if "error" in result:
-            print(f"    [SKIP] {result['error']}")
-        else:
-            print(f"    ACS5 distinct keys: {result['acs_keys']}")
-            print(f"    TIGER distinct keys: {result['tiger_keys']}")
-            print(f"    Matched keys: {result['matched_keys']} ({result['match_rate']}%)")
-            if result['match_rate'] < 100:
-                print(f"    [WARN] Not all ACS keys matched TIGER!")
-
-    # --- SILVER COMPOSITE KEY UNIQUENESS ---
-    print_section("SILVER LAYER - COMPOSITE KEY UNIQUENESS")
-    print("  Checking geography_id + survey_year uniqueness...")
-
-    for table, db in silver_tables:
-        if "acs5" in table:
-            continue  # ACS can have multiple rows per geography if NAME changes
-        result = check_composite_key_duplicates(db, table, "geography_id", "survey_year")
-        print(f"\n  {table}:")
-        if "error" in result:
-            print(f"    [SKIP] {result['error']}")
-        elif result["has_duplicates"] is None:
-            print(f"    [SKIP] Could not check")
-        elif result["has_duplicates"]:
-            print(f"    [FAIL] {len(result['duplicates'])} duplicate keys found!")
-            for d in result["duplicates"][:3]:
-                print(f"      geography_id={d.get('geography_id')}, survey_year={d.get('survey_year')}, count={d.get('cnt')}")
-        else:
-            print(f"    [OK] No duplicates")
-
-    # --- GOLD LAYER CHECK ---
-    print_section("GOLD LAYER - SCHEMA & ROW COUNTS")
-    for geography in ["states", "counties", "tracts"]:
-        table = f"gold_{geography}"
-        schema = analyze_table_schema(GOLD_DB, table)
-        total = table_row_count(GOLD_DB, table)
-        print(f"\n  {table}:")
-        if schema is None:
-            print(f"    [SKIP] Does not exist")
-            continue
-        print(f"    Columns ({len(schema)}): {', '.join(schema.keys())}")
-        print(f"    Total rows: {total}")
-        nulls = null_check(GOLD_DB, table, ["geography_id", "survey_year"])
-        for col, cnt in nulls.items():
-            if cnt > 0:
-                print(f"    [WARN] Null {col}: {cnt}")
-
-        # Check for duplicates
-        result = check_composite_key_duplicates(GOLD_DB, table, "geography_id", "survey_year")
-        if result.get("has_duplicates"):
-            print(f"    [FAIL] Duplicate composite keys!")
-        else:
-            print(f"    [OK] Composite key unique")
-
-    print(f"\n{'=' * 80}")
-    print("ANALYSIS COMPLETE")
-    print(f"{'=' * 80}\n")
+    print(f"\n{'=' * 90}")
+    print("  DONE")
+    print(f"{'=' * 90}\n")
 
 
 if __name__ == "__main__":

@@ -91,17 +91,22 @@ def _build_silver_acs5_asset(geography: str):
                 walked_to_work BIGINT,
                 worked_from_home BIGINT
             )
-            WITH (
-                table_type = 'ICEBERG',
-                format = 'PARQUET',
-                write_compression = 'SNAPPY',
-                is_external = false,
-                partitioning = ARRAY['survey_year'],
-                location = '{silver_location}'
+            PARTITIONED BY (survey_year)
+            LOCATION '{silver_location}'
+            TBLPROPERTIES (
+                'table_type'='ICEBERG',
+                'format'='parquet',
+                'write_compression'='snappy'
             )
             """
-            athena.execute_query(query=create_iceberg_sql)
-            context.log.info(f"Created Iceberg table {SILVER_DB}.silver_acs5_{geography}")
+            try:
+                athena.execute_query(query=create_iceberg_sql)
+                context.log.info(f"Created Iceberg table {SILVER_DB}.silver_acs5_{geography}")
+            except Exception as e:
+                if "already exists" in str(e).lower():
+                    context.log.info(f"Iceberg table {SILVER_DB}.silver_acs5_{geography} already exists, skipping creation")
+                else:
+                    raise
 
         # Create external table over bronze parquet for this year
         # For tracts, bronze has year=YYYY/state=FF partitions - we query all states for the year
@@ -110,9 +115,6 @@ def _build_silver_acs5_asset(geography: str):
         create_external_sql = f"""
         CREATE EXTERNAL TABLE {SILVER_DB}.{ext_table_name} (
             NAME STRING,
-            state STRING,
-            county STRING,
-            tract STRING,
             total_population STRING,
             median_age STRING,
             white_alone_not_hispanic STRING,
@@ -139,7 +141,10 @@ def _build_silver_acs5_asset(geography: str):
             drove_alone_to_work STRING,
             walked_to_work STRING,
             worked_from_home STRING,
-            survey_year STRING,
+            state STRING,
+            county STRING,
+            tract STRING,
+            survey_year BIGINT,
             ingest_date STRING
         )
         STORED AS PARQUET
@@ -164,7 +169,7 @@ def _build_silver_acs5_asset(geography: str):
             LPAD(county, 3, '0') AS county_fips,
             tract AS tract_fips,
             {geo_id_expr} AS geography_id,
-            CAST(survey_year AS INT) AS survey_year,
+            survey_year AS survey_year,
             CAST(total_population AS BIGINT) AS total_population,
             CAST(median_age AS DOUBLE) AS median_age,
             CAST(white_alone_not_hispanic AS BIGINT) AS white_alone_not_hispanic,
