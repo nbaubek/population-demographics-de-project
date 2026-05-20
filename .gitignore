@@ -14,6 +14,7 @@ venv/
 ENV/
 env/
 .virtualenv
+dagster-orch/.venv/
 
 # Pytest
 .pytest_cache/
