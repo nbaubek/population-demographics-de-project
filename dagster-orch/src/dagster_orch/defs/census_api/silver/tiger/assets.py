@@ -137,8 +137,13 @@ def _build_silver_tiger_asset(geography: str):
         FROM {SILVER_DB}.{ext_table_name}
         """
 
-        # Execute
+        # Execute - idempotent backfill pattern
+        athena.execute_query(query=f"DROP TABLE IF EXISTS {SILVER_DB}.{ext_table_name}")
         athena.execute_query(query=create_external_sql)
+        athena.execute_query(query=f"""
+            DELETE FROM {SILVER_DB}.silver_tiger_{geography}
+            WHERE survey_year = {year}
+        """)
         athena.execute_query(query=insert_sql)
         athena.execute_query(query=f"DROP TABLE {SILVER_DB}.{ext_table_name}")
 
