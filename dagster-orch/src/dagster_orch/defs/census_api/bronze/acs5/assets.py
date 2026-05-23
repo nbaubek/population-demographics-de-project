@@ -11,6 +11,7 @@ import polars as pl
 import requests
 from datetime import date
 from os import getenv
+import time as time_module
 from requests.exceptions import RequestException
 from tenacity import (
     retry,
@@ -93,16 +94,26 @@ def _get_api_key() -> str:
 def bronze_acs5_states(context: dg.AssetExecutionContext) -> dg.MaterializeResult:
     """Ingest ACS 5-year data for all US states."""
     year = int(context.partition_key)
+    start_time = time_module.time()
+    context.log.info(f"Starting bronze_acs5_states for year={year}")
     api_key = _get_api_key()
 
     records = _fetch_census_data(api_key, year, for_clause="state:*")
+    context.log.info(f"Fetched {len(records)} rows from Census API")
 
     df = pl.DataFrame(records)
     output_path = f"{BRONZE_BUCKET}/census_acs5/states/year={year}/states.parquet"
     df.write_parquet(output_path, compression="snappy")
+    elapsed = time_module.time() - start_time
+    context.log.info(f"Wrote {len(df)} rows to {output_path} in {elapsed:.1f}s")
 
     return dg.MaterializeResult(
-        metadata={"row_count": len(df), "year": year, "output_path": output_path}
+        metadata={
+            "row_count": len(df),
+            "year": year,
+            "s3_path": output_path,
+            "duration_seconds": round(elapsed, 2),
+        }
     )
 
 
@@ -114,17 +125,27 @@ def bronze_acs5_states(context: dg.AssetExecutionContext) -> dg.MaterializeResul
 def bronze_acs5_counties(context: dg.AssetExecutionContext) -> dg.MaterializeResult:
     """Ingest ACS 5-year data for all US counties."""
     year = int(context.partition_key)
+    start_time = time_module.time()
+    context.log.info(f"Starting bronze_acs5_counties for year={year}")
     api_key = _get_api_key()
 
     # Census API requires in=state:* for county-level queries to ensure completeness
     records = _fetch_census_data(api_key, year, for_clause="county:*", state_filter="*")
+    context.log.info(f"Fetched {len(records)} rows from Census API")
 
     df = pl.DataFrame(records)
     output_path = f"{BRONZE_BUCKET}/census_acs5/counties/year={year}/counties.parquet"
     df.write_parquet(output_path, compression="snappy")
+    elapsed = time_module.time() - start_time
+    context.log.info(f"Wrote {len(df)} rows to {output_path} in {elapsed:.1f}s")
 
     return dg.MaterializeResult(
-        metadata={"row_count": len(df), "year": year, "output_path": output_path}
+        metadata={
+            "row_count": len(df),
+            "year": year,
+            "s3_path": output_path,
+            "duration_seconds": round(elapsed, 2),
+        }
     )
 
 
@@ -142,18 +163,29 @@ def bronze_acs5_tracts(context: dg.AssetExecutionContext) -> dg.MaterializeResul
     keys = context.partition_key.keys_by_dimension
     year = int(keys["year"])
     state_fips = keys["state"]
+    start_time = time_module.time()
+    context.log.info(f"Starting bronze_acs5_tracts for year={year}, state={state_fips}")
     api_key = _get_api_key()
 
     # Tracts for specific state (state_fips is zero-padded like "06")
     records = _fetch_census_data(
         api_key, year, for_clause="tract:*", state_filter=state_fips
     )
+    context.log.info(f"Fetched {len(records)} rows from Census API")
 
     df = pl.DataFrame(records)
     # Multi-dimensional Hive partitioning: year=YYYY/state=FF
     output_path = f"{BRONZE_BUCKET}/census_acs5/tracts/year={year}/state={state_fips}/tracts.parquet"
     df.write_parquet(output_path, compression="snappy")
+    elapsed = time_module.time() - start_time
+    context.log.info(f"Wrote {len(df)} rows to {output_path} in {elapsed:.1f}s")
 
     return dg.MaterializeResult(
-        metadata={"row_count": len(df), "year": year, "state": state_fips, "output_path": output_path}
+        metadata={
+            "row_count": len(df),
+            "year": year,
+            "state": state_fips,
+            "s3_path": output_path,
+            "duration_seconds": round(elapsed, 2),
+        }
     )

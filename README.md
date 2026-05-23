@@ -163,6 +163,13 @@ Infrastructure is managed via Terraform in the `infra/` directory. Provisions AW
 - AWS credentials configured (e.g., via `~/.aws/credentials` or environment variables)
 - AWS account with permissions for S3, Glue, Athena, IAM
 
+### Secrets Management
+
+Secrets management — you're using `.env` now which is fine for local dev, but for production:
+
++ AWS Secrets Manager or SSM Parameter Store for CENSUS_API_KEY
++ Never in environment variables on a shared server
+
 ### Initial Setup
 
 ```bash
@@ -211,7 +218,7 @@ All data comes from the [American Community Survey 5-Year Estimates](https://www
 
 **Note:** Education table B15003 uses modern codes (with aggregate totals, no gender split) from **2012 onwards**. Earlier years (2009-2011) use B15002 with gender split (male/female sections) and different variable codes. All other tables use stable codes across the full 2009-2024 range. 
 
-### Census ACS Variables
+### Census ACS Tables and Variables
 
 #### B01001 — Sex by Age
 *Universe: Total population*

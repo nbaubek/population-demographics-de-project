@@ -5,6 +5,8 @@ The Iceberg table is partitioned by 'survey_year' column and contains all years 
 Each Dagster partition run appends one year's data to the Iceberg table.
 """
 
+import time as time_module
+
 import dagster as dg
 
 from dagster_orch.defs.census_api.shared.constants import YEAR_PARTITIONS
@@ -200,14 +202,21 @@ def _build_silver_acs5_asset(geography: str):
         """
 
         # Execute - idempotent backfill pattern
+        start_time = time_module.time()
+        context.log.info(f"Starting silver_acs5_{geography} for year={year}")
         athena.execute_query(query=f"DROP TABLE IF EXISTS {SILVER_DB}.{ext_table_name}")
+        context.log.info(f"Created external table over bronze: {bronze_base}")
         athena.execute_query(query=create_external_sql)
+        context.log.info(f"Deleted existing data for survey_year={year}")
         athena.execute_query(query=f"""
             DELETE FROM {SILVER_DB}.silver_acs5_{geography}
             WHERE survey_year = {year}
         """)
+        context.log.info(f"Inserting fresh data for survey_year={year}")
         athena.execute_query(query=insert_sql)
+        context.log.info(f"Cleaning up external table")
         athena.execute_query(query=f"DROP TABLE {SILVER_DB}.{ext_table_name}")
+        elapsed = time_module.time() - start_time
 
         return dg.MaterializeResult(
             metadata={
@@ -215,6 +224,7 @@ def _build_silver_acs5_asset(geography: str):
                 "geography": geography,
                 "silver_table": f"{SILVER_DB}.silver_acs5_{geography}",
                 "action": "INSERT",
+                "duration_seconds": round(elapsed, 2),
             }
         )
 

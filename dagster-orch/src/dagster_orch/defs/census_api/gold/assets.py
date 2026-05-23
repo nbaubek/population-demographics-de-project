@@ -6,6 +6,8 @@ partitioned internally by the 'survey_year' column. This allows querying across 
 Composite key: geography_id + survey_year = unique row (horizontal JOIN between ACS and TIGER).
 """
 
+import time as time_module
+
 import dagster as dg
 
 SILVER_DB = "population_demographics_silver"
@@ -37,12 +39,16 @@ def _build_gold_asset(geography: str):
     def gold_asset(context: dg.AssetExecutionContext) -> dg.MaterializeResult:
         athena = context.resources.athena
 
+        context.log.info(f"Starting gold_{geography} — full refresh CTAS")
+        start_time = time_module.time()
+
         # Drop existing table if exists (full refresh — not incremental)
         drop_sql = f"DROP TABLE IF EXISTS {GOLD_DB}.gold_{geography}"
         try:
             athena.execute_query(query=drop_sql)
-        except Exception:
-            context.log.warning("Table drop failed (may not exist), continuing")
+            context.log.info(f"Dropped existing table {GOLD_DB}.gold_{geography}")
+        except Exception as e:
+            context.log.warning(f"Table drop failed (may not exist), continuing: {e}")
 
         # Create Iceberg table with JOIN between ACS and TIGER
         # Silver ACS5 columns: geography_name, state_fips, county_fips, tract_fips,
@@ -107,53 +113,11 @@ def _build_gold_asset(geography: str):
             'write_compression'='snappy'
         )
         """
+        context.log.info(f"Creating Iceberg table {GOLD_DB}.gold_{geography}")
         athena.execute_query(query=create_table_sql)
 
         # Step 2: Insert from silver JOIN
-        insert_sql = f"""
-        INSERT INTO {GOLD_DB}.gold_{geography}
-        SELECT
-            acs.geography_id,
-            CAST(acs.survey_year AS INT) AS survey_year,
-            acs.geography_name,
-            acs.state_fips,
-            acs.county_fips,
-            acs.tract_fips,
-            CAST(acs.total_population AS BIGINT) AS total_population,
-            CAST(acs.median_age AS DOUBLE) AS median_age,
-            CAST(acs.white_alone_not_hispanic AS BIGINT) AS white_alone_not_hispanic,
-            CAST(acs.black_alone_not_hispanic AS BIGINT) AS black_alone_not_hispanic,
-            CAST(acs.asian_alone_not_hispanic AS BIGINT) AS asian_alone_not_hispanic,
-            CAST(acs.hispanic_or_latino AS BIGINT) AS hispanic_or_latino,
-            CAST(acs.median_household_income AS BIGINT) AS median_household_income,
-            CAST(acs.poverty_total AS BIGINT) AS poverty_total,
-            CAST(acs.below_poverty_level AS BIGINT) AS below_poverty_level,
-            CAST(acs.education_total_25y_plus AS BIGINT) AS education_total_25y_plus,
-            CAST(acs.bachelors_degree AS BIGINT) AS bachelors_degree,
-            CAST(acs.masters_degree AS BIGINT) AS masters_degree,
-            CAST(acs.professional_degree AS BIGINT) AS professional_degree,
-            CAST(acs.doctorate_degree AS BIGINT) AS doctorate_degree,
-            CAST(acs.high_school_diploma AS BIGINT) AS high_school_diploma,
-            CAST(acs.no_high_school_diploma AS BIGINT) AS no_high_school_diploma,
-            CAST(acs.median_home_value AS BIGINT) AS median_home_value,
-            CAST(acs.total_occupied AS BIGINT) AS total_occupied,
-            CAST(acs.owner_occupied AS BIGINT) AS owner_occupied,
-            CAST(acs.renter_occupied AS BIGINT) AS renter_occupied,
-            CAST(acs.median_gross_rent AS BIGINT) AS median_gross_rent,
-            CAST(acs.migration_total AS BIGINT) AS migration_total,
-            CAST(acs.commute_total_workers_16_plus AS BIGINT) AS commute_total_workers_16_plus,
-            CAST(acs.drove_alone_to_work AS BIGINT) AS drove_alone_to_work,
-            CAST(acs.walked_to_work AS BIGINT) AS walked_to_work,
-            CAST(acs.worked_from_home AS BIGINT) AS worked_from_home,
-            tiger.ALAND,
-            tiger.AWATER,
-            tiger.geometry_wkt
-        FROM {SILVER_DB}.silver_acs5_{geography} acs
-        JOIN {SILVER_DB}.silver_tiger_{geography} tiger
-            ON acs.geography_id = tiger.geography_id
-            AND acs.survey_year = tiger.survey_year
-        """
-
+        context.log.info(f"Inserting joined ACS+TIGER data for all years")
         athena.execute_query(query=insert_sql)
 
         # Get row count for metadata
@@ -161,6 +125,9 @@ def _build_gold_asset(geography: str):
             query=f"SELECT COUNT(*) as cnt FROM {GOLD_DB}.gold_{geography}"
         )
         row_count = count_result[0]["cnt"] if count_result else 0
+        context.log.info(f"Gold table {GOLD_DB}.gold_{geography} created with {row_count} rows")
+        elapsed = time_module.time() - start_time
+        context.log.info(f"Gold {geography} completed in {elapsed:.1f}s")
 
         return dg.MaterializeResult(
             metadata={
@@ -168,6 +135,7 @@ def _build_gold_asset(geography: str):
                 "gold_table": f"{GOLD_DB}.gold_{geography}",
                 "join_type": "INNER JOIN on geography_id + survey_year",
                 "row_count": row_count,
+                "duration_seconds": round(elapsed, 2),
             }
         )
 
