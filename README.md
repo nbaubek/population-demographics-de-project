@@ -196,7 +196,7 @@ terraform apply
 ### Bucket Naming Convention
 
 Base name + suffix:
-- `{bucket_name}-iceberg` → raw data bucket
+- `{bucket_name}-iceberg` → raw data bucket. For raw data and Iceberg tables.
 - `{bucket_name}-athena-results` → query results
 
 Default base: `population-demographics`
@@ -207,6 +207,74 @@ Default base: `population-demographics`
 |----------|---------|-------------|
 | `aws_region` | `us-east-1` | AWS region |
 | `bucket_name` | `population-demographics` | Base name for all buckets |
+
+### Athena Cost Guardrails
+
+The workgroup is configured with `bytes_scanned_cutoff_per_query = 1073741824` (1 GB). Any query scanning more than 1GB of data will fail with a cost guardrail error, preventing runaway scans from accumulating large bills.
+
+---
+
+## Data Quality & Observability
+
+### Asset Checks
+
+Asset checks run after each materialization to catch data quality issues before they reach downstream layers. Located in `dagster-orch/src/dagster_orch/defs/census_api/{silver,gold}/checks.py`.
+
+**Bronze layer** (`bronze/tiger/checks.py`):
+- `check_geometry_not_null` — `geometry_wkt` must be non-null for every row. A missing geometry silently passes through to silver and breaks Kepler.gl downstream.
+
+**Silver layer** (`silver/{acs5,tiger}/checks.py`):
+- `check_row_counts_per_year` — expected 52 states, ~3,212 counties, ~73,000 tracts per year
+- `check_no_null_geography_id` — no null join keys
+- `check_no_duplicate_keys` — no duplicate `(geography_id, survey_year)` composites
+- `check_all_years_present` — all 13 years (2012–2024) present
+
+**Gold layer** (`gold/checks.py`):
+- `check_row_counts_per_year` — ~52 states, ~3,212 counties, ~73,000 tracts per year (join didn't lose rows)
+- `check_no_duplicate_keys` — uniqueness of `(geography_id, survey_year)` after join
+- `check_geometry_present` — `geometry_wkt` is non-null for every row
+- `check_acs_metrics_populated` — `total_population`, `median_household_income`, etc. are non-null
+- `check_gold_states_ca_population` — spot-check California population ~39M for recent years (WARN severity)
+
+Checks run via the **Asset Details → Checks** tab in the Dagster UI after materializing any partition.
+
+### Structured Logging
+
+All assets use `context.log` consistently for run-time visibility:
+
+**Bronze layer** — per materialization:
+```
+Starting bronze_acs5_states for year=2022
+Fetched 52 rows from Census API
+Wrote 52 rows to s3://.../year=2022/states.parquet in 1.2s
+```
+
+**Silver layer** — per partition run (idempotent backfill pattern):
+```
+Starting silver_acs5_counties for year=2019
+Created external table over bronze: s3://.../counties/year=2019
+Deleted existing data for survey_year=2019
+Inserting fresh data for survey_year=2019
+Cleaning up external table
+```
+
+**Gold layer** — per materialization:
+```
+Starting gold_states — full refresh CTAS
+Dropped existing table population_demographics_gold.gold_states
+Creating Iceberg table population_demographics_gold.gold_states
+Inserting joined ACS+TIGER data for all years
+Gold table population_demographics_gold.gold_states created with 676 rows
+Gold states completed in 12.4s
+```
+
+### Metadata Per Materialization
+
+Every `MaterializeResult` captures:
+- `row_count` — rows written
+- `s3_path` / `silver_table` / `gold_table` — target location
+- `duration_seconds` — wall-clock time
+- `year` and `geography` / `state` where applicable
 
 ---
 

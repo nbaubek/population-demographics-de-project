@@ -2,9 +2,40 @@
 from dagster_orch.defs.census_api.gold.assets import gold_states, gold_counties, gold_tracts
 from dagster_orch.defs.census_api.gold.jobs import gold_job
 
+# Asset checks
+from dagster_orch.defs.census_api.gold.checks import (
+    check_gold_states_row_count,
+    check_gold_counties_row_count,
+    check_gold_tracts_row_count,
+    check_gold_states_no_duplicate_keys,
+    check_gold_counties_no_duplicate_keys,
+    check_gold_tracts_no_duplicate_keys,
+    check_gold_states_geometry,
+    check_gold_counties_geometry,
+    check_gold_tracts_geometry,
+    check_gold_states_acs_metrics,
+    check_gold_counties_acs_metrics,
+    check_gold_tracts_acs_metrics,
+    check_gold_states_ca_population,
+)
+
 __all__ = [
     "gold_states",
     "gold_counties",
     "gold_tracts",
     "gold_job",
+    # Checks
+    "check_gold_states_row_count",
+    "check_gold_counties_row_count",
+    "check_gold_tracts_row_count",
+    "check_gold_states_no_duplicate_keys",
+    "check_gold_counties_no_duplicate_keys",
+    "check_gold_tracts_no_duplicate_keys",
+    "check_gold_states_geometry",
+    "check_gold_counties_geometry",
+    "check_gold_tracts_geometry",
+    "check_gold_states_acs_metrics",
+    "check_gold_counties_acs_metrics",
+    "check_gold_tracts_acs_metrics",
+    "check_gold_states_ca_population",
 ]
