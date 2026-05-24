@@ -8,23 +8,30 @@ from dagster import AssetCheckResult, AssetCheckSeverity, asset_check
 
 GOLD_DB = "population_demographics_gold"
 
+MIN_STATES_PER_YEAR = 50
+MIN_COUNTIES_PER_YEAR = 3200
+MIN_TRACTS_PER_YEAR = 73000
+
 
 @asset_check(asset="gold_states", name="check_row_counts_per_year")
 def check_gold_states_row_count(context) -> AssetCheckResult:
     """Verify join didn't lose rows — approximately 52 per year."""
     athena = context.resources.athena
-    result = athena.execute_query("""
+    result = athena.execute_query(f"""
         SELECT survey_year, COUNT(*) as row_count
-        FROM population_demographics_gold.gold_states
+        FROM {GOLD_DB}.gold_states
         GROUP BY survey_year
         ORDER BY survey_year
     """)
-    # ~52 rows per year (50 states + DC). Allow slight variation.
-    failed_years = [r for r in result if r["row_count"] < 50]
+    failed = {r["survey_year"]: r["row_count"] for r in result if r["row_count"] < MIN_STATES_PER_YEAR}
     return AssetCheckResult(
-        passed=len(failed_years) == 0,
+        passed=len(failed) == 0,
         severity=AssetCheckSeverity.ERROR,
-        metadata={"failed_years": str(failed_years)} if failed_years else {"status": "all years >= 50 rows"},
+        metadata={
+            "min_expected": MIN_STATES_PER_YEAR,
+            "year_count": len(result),
+            "failed_years": failed if failed else {"none": f"all years >= {MIN_STATES_PER_YEAR}"},
+        },
     )
 
 
@@ -32,17 +39,21 @@ def check_gold_states_row_count(context) -> AssetCheckResult:
 def check_gold_counties_row_count(context) -> AssetCheckResult:
     """Verify join didn't lose rows — approximately 3,212+ per year."""
     athena = context.resources.athena
-    result = athena.execute_query("""
+    result = athena.execute_query(f"""
         SELECT survey_year, COUNT(*) as row_count
-        FROM population_demographics_gold.gold_counties
+        FROM {GOLD_DB}.gold_counties
         GROUP BY survey_year
         ORDER BY survey_year
     """)
-    failed_years = [r for r in result if r["row_count"] < 3200]
+    failed = {r["survey_year"]: r["row_count"] for r in result if r["row_count"] < MIN_COUNTIES_PER_YEAR}
     return AssetCheckResult(
-        passed=len(failed_years) == 0,
+        passed=len(failed) == 0,
         severity=AssetCheckSeverity.ERROR,
-        metadata={"failed_years": str(failed_years)} if failed_years else {"status": "all years >= 3200 rows"},
+        metadata={
+            "min_expected": MIN_COUNTIES_PER_YEAR,
+            "year_count": len(result),
+            "failed_years": failed if failed else {"none": f"all years >= {MIN_COUNTIES_PER_YEAR}"},
+        },
     )
 
 
@@ -50,17 +61,21 @@ def check_gold_counties_row_count(context) -> AssetCheckResult:
 def check_gold_tracts_row_count(context) -> AssetCheckResult:
     """Verify join didn't lose rows — approximately 73,000+ per year."""
     athena = context.resources.athena
-    result = athena.execute_query("""
+    result = athena.execute_query(f"""
         SELECT survey_year, COUNT(*) as row_count
-        FROM population_demographics_gold.gold_tracts
+        FROM {GOLD_DB}.gold_tracts
         GROUP BY survey_year
         ORDER BY survey_year
     """)
-    failed_years = [r for r in result if r["row_count"] < 73000]
+    failed = {r["survey_year"]: r["row_count"] for r in result if r["row_count"] < MIN_TRACTS_PER_YEAR}
     return AssetCheckResult(
-        passed=len(failed_years) == 0,
+        passed=len(failed) == 0,
         severity=AssetCheckSeverity.ERROR,
-        metadata={"failed_years": str(failed_years)} if failed_years else {"status": "all years >= 73000 rows"},
+        metadata={
+            "min_expected": MIN_TRACTS_PER_YEAR,
+            "year_count": len(result),
+            "failed_years": failed if failed else {"none": f"all years >= {MIN_TRACTS_PER_YEAR}"},
+        },
     )
 
 
@@ -68,16 +83,19 @@ def check_gold_tracts_row_count(context) -> AssetCheckResult:
 def check_gold_states_no_duplicate_keys(context) -> AssetCheckResult:
     """No duplicate (geography_id, survey_year) composite keys after join."""
     athena = context.resources.athena
-    result = athena.execute_query("""
+    result = athena.execute_query(f"""
         SELECT geography_id, survey_year, COUNT(*) as cnt
-        FROM population_demographics_gold.gold_states
+        FROM {GOLD_DB}.gold_states
         GROUP BY geography_id, survey_year
         HAVING COUNT(*) > 1
     """)
     return AssetCheckResult(
         passed=len(result) == 0,
         severity=AssetCheckSeverity.ERROR,
-        metadata={"duplicate_count": len(result)},
+        metadata={
+            "duplicate_count": len(result),
+            "sample": [{"geography_id": r["geography_id"], "survey_year": r["survey_year"]} for r in result[:3]],
+        },
     )
 
 
@@ -85,16 +103,19 @@ def check_gold_states_no_duplicate_keys(context) -> AssetCheckResult:
 def check_gold_counties_no_duplicate_keys(context) -> AssetCheckResult:
     """No duplicate (geography_id, survey_year) composite keys after join."""
     athena = context.resources.athena
-    result = athena.execute_query("""
+    result = athena.execute_query(f"""
         SELECT geography_id, survey_year, COUNT(*) as cnt
-        FROM population_demographics_gold.gold_counties
+        FROM {GOLD_DB}.gold_counties
         GROUP BY geography_id, survey_year
         HAVING COUNT(*) > 1
     """)
     return AssetCheckResult(
         passed=len(result) == 0,
         severity=AssetCheckSeverity.ERROR,
-        metadata={"duplicate_count": len(result)},
+        metadata={
+            "duplicate_count": len(result),
+            "sample": [{"geography_id": r["geography_id"], "survey_year": r["survey_year"]} for r in result[:3]],
+        },
     )
 
 
@@ -102,16 +123,19 @@ def check_gold_counties_no_duplicate_keys(context) -> AssetCheckResult:
 def check_gold_tracts_no_duplicate_keys(context) -> AssetCheckResult:
     """No duplicate (geography_id, survey_year) composite keys after join."""
     athena = context.resources.athena
-    result = athena.execute_query("""
+    result = athena.execute_query(f"""
         SELECT geography_id, survey_year, COUNT(*) as cnt
-        FROM population_demographics_gold.gold_tracts
+        FROM {GOLD_DB}.gold_tracts
         GROUP BY geography_id, survey_year
         HAVING COUNT(*) > 1
     """)
     return AssetCheckResult(
         passed=len(result) == 0,
         severity=AssetCheckSeverity.ERROR,
-        metadata={"duplicate_count": len(result)},
+        metadata={
+            "duplicate_count": len(result),
+            "sample": [{"geography_id": r["geography_id"], "survey_year": r["survey_year"]} for r in result[:3]],
+        },
     )
 
 
@@ -119,9 +143,9 @@ def check_gold_tracts_no_duplicate_keys(context) -> AssetCheckResult:
 def check_gold_states_geometry(context) -> AssetCheckResult:
     """Verify geometry_wkt is populated for all rows."""
     athena = context.resources.athena
-    result = athena.execute_query("""
+    result = athena.execute_query(f"""
         SELECT COUNT(*) as total, COUNT(geometry_wkt) as has_geometry
-        FROM population_demographics_gold.gold_states
+        FROM {GOLD_DB}.gold_states
     """)
     total = result[0]["total"] if result else 0
     has_geometry = result[0]["has_geometry"] if result else 0
@@ -136,9 +160,9 @@ def check_gold_states_geometry(context) -> AssetCheckResult:
 def check_gold_counties_geometry(context) -> AssetCheckResult:
     """Verify geometry_wkt is populated for all rows."""
     athena = context.resources.athena
-    result = athena.execute_query("""
+    result = athena.execute_query(f"""
         SELECT COUNT(*) as total, COUNT(geometry_wkt) as has_geometry
-        FROM population_demographics_gold.gold_counties
+        FROM {GOLD_DB}.gold_counties
     """)
     total = result[0]["total"] if result else 0
     has_geometry = result[0]["has_geometry"] if result else 0
@@ -153,9 +177,9 @@ def check_gold_counties_geometry(context) -> AssetCheckResult:
 def check_gold_tracts_geometry(context) -> AssetCheckResult:
     """Verify geometry_wkt is populated for all rows."""
     athena = context.resources.athena
-    result = athena.execute_query("""
+    result = athena.execute_query(f"""
         SELECT COUNT(*) as total, COUNT(geometry_wkt) as has_geometry
-        FROM population_demographics_gold.gold_tracts
+        FROM {GOLD_DB}.gold_tracts
     """)
     total = result[0]["total"] if result else 0
     has_geometry = result[0]["has_geometry"] if result else 0
@@ -170,13 +194,13 @@ def check_gold_tracts_geometry(context) -> AssetCheckResult:
 def check_gold_states_acs_metrics(context) -> AssetCheckResult:
     """Verify ACS metrics (total_population, median_household_income) are populated."""
     athena = context.resources.athena
-    result = athena.execute_query("""
+    result = athena.execute_query(f"""
         SELECT
             COUNT(*) as total,
             COUNT(total_population) as has_population,
             COUNT(median_household_income) as has_income,
             COUNT(bachelors_degree) as has_education
-        FROM population_demographics_gold.gold_states
+        FROM {GOLD_DB}.gold_states
     """)
     if not result:
         return AssetCheckResult(
@@ -204,12 +228,12 @@ def check_gold_states_acs_metrics(context) -> AssetCheckResult:
 def check_gold_counties_acs_metrics(context) -> AssetCheckResult:
     """Verify ACS metrics are populated."""
     athena = context.resources.athena
-    result = athena.execute_query("""
+    result = athena.execute_query(f"""
         SELECT
             COUNT(*) as total,
             COUNT(total_population) as has_population,
             COUNT(median_household_income) as has_income
-        FROM population_demographics_gold.gold_counties
+        FROM {GOLD_DB}.gold_counties
     """)
     if not result:
         return AssetCheckResult(
@@ -231,12 +255,12 @@ def check_gold_counties_acs_metrics(context) -> AssetCheckResult:
 def check_gold_tracts_acs_metrics(context) -> AssetCheckResult:
     """Verify ACS metrics are populated."""
     athena = context.resources.athena
-    result = athena.execute_query("""
+    result = athena.execute_query(f"""
         SELECT
             COUNT(*) as total,
             COUNT(total_population) as has_population,
             COUNT(median_household_income) as has_income
-        FROM population_demographics_gold.gold_tracts
+        FROM {GOLD_DB}.gold_tracts
     """)
     if not result:
         return AssetCheckResult(
@@ -258,24 +282,23 @@ def check_gold_tracts_acs_metrics(context) -> AssetCheckResult:
 def check_gold_states_ca_population(context) -> AssetCheckResult:
     """Spot check: California total_population should be ~39M for recent years."""
     athena = context.resources.athena
-    result = athena.execute_query("""
-        SELECT survey_year, total_population, median_household_income
-        FROM population_demographics_gold.gold_states
+    result = athena.execute_query(f"""
+        SELECT survey_year, total_population
+        FROM {GOLD_DB}.gold_states
         WHERE state_fips = '06'
         ORDER BY survey_year
     """)
-    # Check recent years (2022+) have plausible CA population
     recent = [r for r in result if r["survey_year"] >= 2022]
-    passed = True
-    for r in recent:
-        pop = r.get("total_population")
-        if pop and (int(pop) < 35000000 or int(pop) > 45000000):
-            passed = False
-            break
+    failed_rows = [
+        {"year": r["survey_year"], "pop": r["total_population"]}
+        for r in recent
+        if r["total_population"] and (int(r["total_population"]) < 35000000 or int(r["total_population"]) > 45000000)
+    ]
     return AssetCheckResult(
-        passed=passed,
+        passed=len(failed_rows) == 0,
         severity=AssetCheckSeverity.WARN,
         metadata={
-            "recent_ca_rows": str([{"year": r["survey_year"], "pop": r["total_population"]} for r in recent]),
+            "recent_years_checked": len(recent),
+            "failures": failed_rows if failed_rows else {"none": "all recent years plausible (~35-45M)"},
         },
     )

@@ -6,63 +6,76 @@ issues before the data reaches the gold layer.
 
 from dagster import AssetCheckResult, AssetCheckSeverity, asset_check
 
-# TIGER includes territories so counts are higher than ACS
+SILVER_DB = "population_demographics_silver"
+
 EXPECTED_STATE_COUNT_TIGER = 56  # 50 states + DC + 4 territories
-APPROX_COUNTY_COUNT_TIGER = 3235  # includes territory counties
+APPROX_COUNTY_COUNT_MIN_TIGER = 3225
+MIN_TRACT_COUNT = 73000
 
 
 @asset_check(asset="silver_tiger_states", name="check_row_counts_per_year")
 def check_silver_tiger_states_row_count(context) -> AssetCheckResult:
     """Every survey_year should have exactly 56 state rows (50 states + DC + 4 territories)."""
     athena = context.resources.athena
-    result = athena.execute_query("""
+    result = athena.execute_query(f"""
         SELECT survey_year, COUNT(*) as row_count
-        FROM population_demographics_silver.silver_tiger_states
+        FROM {SILVER_DB}.silver_tiger_states
         GROUP BY survey_year
         ORDER BY survey_year
     """)
-    failed_years = [r for r in result if r["row_count"] != EXPECTED_STATE_COUNT_TIGER]
+    failed = {r["survey_year"]: r["row_count"] for r in result if r["row_count"] != EXPECTED_STATE_COUNT_TIGER}
     return AssetCheckResult(
-        passed=len(failed_years) == 0,
+        passed=len(failed) == 0,
         severity=AssetCheckSeverity.ERROR,
-        metadata={"failed_years": str(failed_years)} if failed_years else {"status": "all 56 rows present"},
+        metadata={
+            "expected_per_year": EXPECTED_STATE_COUNT_TIGER,
+            "year_count": len(result),
+            "failed_years": failed if failed else {"none": "all years have 56 rows"},
+        },
     )
 
 
 @asset_check(asset="silver_tiger_counties", name="check_row_counts_per_year")
 def check_silver_tiger_counties_row_count(context) -> AssetCheckResult:
-    """Each survey_year should have approximately 3235 county rows."""
+    """Each survey_year should have at least 3,225 county rows."""
     athena = context.resources.athena
-    result = athena.execute_query("""
+    result = athena.execute_query(f"""
         SELECT survey_year, COUNT(*) as row_count
-        FROM population_demographics_silver.silver_tiger_counties
+        FROM {SILVER_DB}.silver_tiger_counties
         GROUP BY survey_year
         ORDER BY survey_year
     """)
-    failed_years = [r for r in result if r["row_count"] < APPROX_COUNTY_COUNT_TIGER - 10]
+    failed = {r["survey_year"]: r["row_count"] for r in result if r["row_count"] < APPROX_COUNTY_COUNT_MIN_TIGER}
     return AssetCheckResult(
-        passed=len(failed_years) == 0,
+        passed=len(failed) == 0,
         severity=AssetCheckSeverity.ERROR,
-        metadata={"failed_years": str(failed_years)} if failed_years else {"status": f"all years >= {APPROX_COUNTY_COUNT_TIGER - 10}"},
+        metadata={
+            "min_expected": APPROX_COUNTY_COUNT_MIN_TIGER,
+            "year_count": len(result),
+            "failed_years": failed if failed else {"none": f"all years >= {APPROX_COUNTY_COUNT_MIN_TIGER}"},
+        },
     )
 
 
 @asset_check(asset="silver_tiger_tracts", name="check_row_counts_per_year")
 def check_silver_tiger_tracts_row_count(context) -> AssetCheckResult:
-    """Each survey_year should have approximately 73,000+ tract rows (51 states)."""
+    """Each survey_year should have at least 73,000 tract rows."""
     athena = context.resources.athena
-    result = athena.execute_query("""
+    result = athena.execute_query(f"""
         SELECT survey_year, COUNT(*) as row_count
-        FROM population_demographics_silver.silver_tiger_tracts
+        FROM {SILVER_DB}.silver_tiger_tracts
         GROUP BY survey_year
         ORDER BY survey_year
     """)
-    min_expected = 73000
-    failed_years = [r for r in result if r["row_count"] < min_expected]
+    failed = {r["survey_year"]: r["row_count"] for r in result if r["row_count"] < MIN_TRACT_COUNT}
     return AssetCheckResult(
-        passed=len(failed_years) == 0,
+        passed=len(failed) == 0,
         severity=AssetCheckSeverity.ERROR,
-        metadata={"failed_years": str(failed_years)} if failed_years else {"status": f"all years >= {min_expected}"},
+        metadata={
+            "min_expected": MIN_TRACT_COUNT,
+            "year_count": len(result),
+            "failed_years": failed if failed else {"none": f"all years >= {MIN_TRACT_COUNT}"},
+        },
     )
 
 
@@ -70,16 +83,16 @@ def check_silver_tiger_tracts_row_count(context) -> AssetCheckResult:
 def check_silver_tiger_states_no_null_geo_id(context) -> AssetCheckResult:
     """No rows should have a null geography_id."""
     athena = context.resources.athena
-    result = athena.execute_query("""
+    result = athena.execute_query(f"""
         SELECT COUNT(*) as null_count
-        FROM population_demographics_silver.silver_tiger_states
+        FROM {SILVER_DB}.silver_tiger_states
         WHERE geography_id IS NULL
     """)
     null_count = result[0]["null_count"] if result else 0
     return AssetCheckResult(
         passed=null_count == 0,
         severity=AssetCheckSeverity.ERROR,
-        metadata={"null_geography_id_count": null_count},
+        metadata={"null_count": null_count},
     )
 
 
@@ -87,16 +100,16 @@ def check_silver_tiger_states_no_null_geo_id(context) -> AssetCheckResult:
 def check_silver_tiger_counties_no_null_geo_id(context) -> AssetCheckResult:
     """No rows should have a null geography_id."""
     athena = context.resources.athena
-    result = athena.execute_query("""
+    result = athena.execute_query(f"""
         SELECT COUNT(*) as null_count
-        FROM population_demographics_silver.silver_tiger_counties
+        FROM {SILVER_DB}.silver_tiger_counties
         WHERE geography_id IS NULL
     """)
     null_count = result[0]["null_count"] if result else 0
     return AssetCheckResult(
         passed=null_count == 0,
         severity=AssetCheckSeverity.ERROR,
-        metadata={"null_geography_id_count": null_count},
+        metadata={"null_count": null_count},
     )
 
 
@@ -104,16 +117,16 @@ def check_silver_tiger_counties_no_null_geo_id(context) -> AssetCheckResult:
 def check_silver_tiger_tracts_no_null_geo_id(context) -> AssetCheckResult:
     """No rows should have a null geography_id."""
     athena = context.resources.athena
-    result = athena.execute_query("""
+    result = athena.execute_query(f"""
         SELECT COUNT(*) as null_count
-        FROM population_demographics_silver.silver_tiger_tracts
+        FROM {SILVER_DB}.silver_tiger_tracts
         WHERE geography_id IS NULL
     """)
     null_count = result[0]["null_count"] if result else 0
     return AssetCheckResult(
         passed=null_count == 0,
         severity=AssetCheckSeverity.ERROR,
-        metadata={"null_geography_id_count": null_count},
+        metadata={"null_count": null_count},
     )
 
 
@@ -121,16 +134,19 @@ def check_silver_tiger_tracts_no_null_geo_id(context) -> AssetCheckResult:
 def check_silver_tiger_states_no_duplicate_keys(context) -> AssetCheckResult:
     """No duplicate (geography_id, survey_year) composite keys."""
     athena = context.resources.athena
-    result = athena.execute_query("""
+    result = athena.execute_query(f"""
         SELECT geography_id, survey_year, COUNT(*) as cnt
-        FROM population_demographics_silver.silver_tiger_states
+        FROM {SILVER_DB}.silver_tiger_states
         GROUP BY geography_id, survey_year
         HAVING COUNT(*) > 1
     """)
     return AssetCheckResult(
         passed=len(result) == 0,
         severity=AssetCheckSeverity.ERROR,
-        metadata={"duplicate_count": len(result), "duplicates": str([dict(r) for r in result[:5]])},
+        metadata={
+            "duplicate_count": len(result),
+            "sample": [{"geography_id": r["geography_id"], "survey_year": r["survey_year"]} for r in result[:3]],
+        },
     )
 
 
@@ -138,16 +154,19 @@ def check_silver_tiger_states_no_duplicate_keys(context) -> AssetCheckResult:
 def check_silver_tiger_counties_no_duplicate_keys(context) -> AssetCheckResult:
     """No duplicate (geography_id, survey_year) composite keys."""
     athena = context.resources.athena
-    result = athena.execute_query("""
+    result = athena.execute_query(f"""
         SELECT geography_id, survey_year, COUNT(*) as cnt
-        FROM population_demographics_silver.silver_tiger_counties
+        FROM {SILVER_DB}.silver_tiger_counties
         GROUP BY geography_id, survey_year
         HAVING COUNT(*) > 1
     """)
     return AssetCheckResult(
         passed=len(result) == 0,
         severity=AssetCheckSeverity.ERROR,
-        metadata={"duplicate_count": len(result), "duplicates": str([dict(r) for r in result[:5]])},
+        metadata={
+            "duplicate_count": len(result),
+            "sample": [{"geography_id": r["geography_id"], "survey_year": r["survey_year"]} for r in result[:3]],
+        },
     )
 
 
@@ -155,16 +174,19 @@ def check_silver_tiger_counties_no_duplicate_keys(context) -> AssetCheckResult:
 def check_silver_tiger_tracts_no_duplicate_keys(context) -> AssetCheckResult:
     """No duplicate (geography_id, survey_year) composite keys."""
     athena = context.resources.athena
-    result = athena.execute_query("""
+    result = athena.execute_query(f"""
         SELECT geography_id, survey_year, COUNT(*) as cnt
-        FROM population_demographics_silver.silver_tiger_tracts
+        FROM {SILVER_DB}.silver_tiger_tracts
         GROUP BY geography_id, survey_year
         HAVING COUNT(*) > 1
     """)
     return AssetCheckResult(
         passed=len(result) == 0,
         severity=AssetCheckSeverity.ERROR,
-        metadata={"duplicate_count": len(result), "duplicates": str([dict(r) for r in result[:5]])},
+        metadata={
+            "duplicate_count": len(result),
+            "sample": [{"geography_id": r["geography_id"], "survey_year": r["survey_year"]} for r in result[:3]],
+        },
     )
 
 
@@ -172,15 +194,15 @@ def check_silver_tiger_tracts_no_duplicate_keys(context) -> AssetCheckResult:
 def check_silver_tiger_states_all_years_present(context) -> AssetCheckResult:
     """All 13 years (2012-2024) should be present in the table."""
     athena = context.resources.athena
-    result = athena.execute_query("""
+    result = athena.execute_query(f"""
         SELECT COUNT(DISTINCT survey_year) as year_count
-        FROM population_demographics_silver.silver_tiger_states
+        FROM {SILVER_DB}.silver_tiger_states
     """)
     year_count = result[0]["year_count"] if result else 0
     return AssetCheckResult(
         passed=year_count == 13,
         severity=AssetCheckSeverity.ERROR,
-        metadata={"year_count": year_count, "expected": 13},
+        metadata={"year_count": year_count, "expected": 13, "missing": max(0, 13 - year_count)},
     )
 
 
@@ -188,15 +210,15 @@ def check_silver_tiger_states_all_years_present(context) -> AssetCheckResult:
 def check_silver_tiger_counties_all_years_present(context) -> AssetCheckResult:
     """All 13 years (2012-2024) should be present in the table."""
     athena = context.resources.athena
-    result = athena.execute_query("""
+    result = athena.execute_query(f"""
         SELECT COUNT(DISTINCT survey_year) as year_count
-        FROM population_demographics_silver.silver_tiger_counties
+        FROM {SILVER_DB}.silver_tiger_counties
     """)
     year_count = result[0]["year_count"] if result else 0
     return AssetCheckResult(
         passed=year_count == 13,
         severity=AssetCheckSeverity.ERROR,
-        metadata={"year_count": year_count, "expected": 13},
+        metadata={"year_count": year_count, "expected": 13, "missing": max(0, 13 - year_count)},
     )
 
 
@@ -204,13 +226,13 @@ def check_silver_tiger_counties_all_years_present(context) -> AssetCheckResult:
 def check_silver_tiger_tracts_all_years_present(context) -> AssetCheckResult:
     """All 13 years (2012-2024) should be present in the table."""
     athena = context.resources.athena
-    result = athena.execute_query("""
+    result = athena.execute_query(f"""
         SELECT COUNT(DISTINCT survey_year) as year_count
-        FROM population_demographics_silver.silver_tiger_tracts
+        FROM {SILVER_DB}.silver_tiger_tracts
     """)
     year_count = result[0]["year_count"] if result else 0
     return AssetCheckResult(
         passed=year_count == 13,
         severity=AssetCheckSeverity.ERROR,
-        metadata={"year_count": year_count, "expected": 13},
+        metadata={"year_count": year_count, "expected": 13, "missing": max(0, 13 - year_count)},
     )
