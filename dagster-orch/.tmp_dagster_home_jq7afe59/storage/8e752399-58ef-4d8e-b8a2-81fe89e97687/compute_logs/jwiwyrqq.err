@@ -1,0 +1,11 @@
+[32m2026-05-25 14:56:13 +0500[0m - dagster - [34mDEBUG[0m - __ASSET_JOB - 8e752399-58ef-4d8e-b8a2-81fe89e97687 - 92431 - LOGS_CAPTURED - Capturing logs for process (pid: 92431).
+[32m2026-05-25 14:56:13 +0500[0m - dagster - [34mDEBUG[0m - __ASSET_JOB - 8e752399-58ef-4d8e-b8a2-81fe89e97687 - 92431 - silver_irs_state_outflows - STEP_START - Started execution of step "silver_irs_state_outflows".
+[32m2026-05-25 14:56:13 +0500[0m - dagster - [34mINFO[0m - __ASSET_JOB - 8e752399-58ef-4d8e-b8a2-81fe89e97687 - silver_irs_state_outflows - Starting silver_irs_state_outflows for year=2014
+[32m2026-05-25 14:56:25 +0500[0m - dagster - [34mINFO[0m - __ASSET_JOB - 8e752399-58ef-4d8e-b8a2-81fe89e97687 - silver_irs_state_outflows - Iceberg table population_demographics_silver.silver_irs_state_outflows already exists
+[32m2026-05-25 14:56:30 +0500[0m - dagster - [34mINFO[0m - __ASSET_JOB - 8e752399-58ef-4d8e-b8a2-81fe89e97687 - silver_irs_state_outflows - Created external table over bronze: s3://population-demographics-iceberg/bronze/irs/migration/state_outflows/year=2014
+[32m2026-05-25 14:56:42 +0500[0m - dagster - [34mINFO[0m - __ASSET_JOB - 8e752399-58ef-4d8e-b8a2-81fe89e97687 - silver_irs_state_outflows - Deleted existing data for survey_year=2014
+[32m2026-05-25 14:56:42 +0500[0m - dagster - [34mINFO[0m - __ASSET_JOB - 8e752399-58ef-4d8e-b8a2-81fe89e97687 - silver_irs_state_outflows - Inserting fresh data for survey_year=2014
+[32m2026-05-25 14:56:47 +0500[0m - dagster - [34mINFO[0m - __ASSET_JOB - 8e752399-58ef-4d8e-b8a2-81fe89e97687 - silver_irs_state_outflows - Cleaning up external table
+[32m2026-05-25 14:56:53 +0500[0m - dagster - [34mDEBUG[0m - __ASSET_JOB - 8e752399-58ef-4d8e-b8a2-81fe89e97687 - 92431 - silver_irs_state_outflows - STEP_OUTPUT - Yielded output "result" of type "Any". (Type check passed).
+[32m2026-05-25 14:56:53 +0500[0m - dagster - [34mDEBUG[0m - __ASSET_JOB - 8e752399-58ef-4d8e-b8a2-81fe89e97687 - 92431 - silver_irs_state_outflows - ASSET_MATERIALIZATION - Materialized value silver_irs_state_outflows.
+[32m2026-05-25 14:56:53 +0500[0m - dagster - [34mDEBUG[0m - __ASSET_JOB - 8e752399-58ef-4d8e-b8a2-81fe89e97687 - 92431 - silver_irs_state_outflows - STEP_SUCCESS - Finished execution of step "silver_irs_state_outflows" in 40.38s.

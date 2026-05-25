@@ -78,67 +78,141 @@ The answer I'm trying to provide is:
 
 ## Overview of the Project in Stages
 
-**Stack:** Dagster (orchestration) + dlt (ingestion) + AWS S3/Glue/Athena (storage/query)
+**Stack:** Dagster (orchestration) + AWS S3/Glue/Athena (storage/query)
 
-### Stage 1: Raw Data Ingestion (Parquet) ✅
+### Stage 1: Raw Data Ingestion (Bronze → S3) ✅
 
-- **Tool:** dlt pipeline → S3 (filesystem destination)
-- **Output:** Parquet files in `s3://population-demographics-iceberg/raw/census_acs5/`
-- **Assets:** `census_states`, `census_counties`, `census_tracts_ca`
-- **Status:** Working — all 3 assets materialized successfully as `.parquet`
-- **Dependencies:** `dlt[s3]`, `dlt[parquet]` (pyarrow)
-- **Credentials:** AWS via `AWS_PROFILE` env var (no static keys in `secrets.toml`)
+- **Tool:** Dagster `@asset` decorators → S3 (native polars write)
+- **Output:** Parquet files in `s3://population-demographics-iceberg/bronze/`
+- **Assets:** `bronze_acs5_states`, `bronze_acs5_counties`, `bronze_acs5_tracts`, `bronze_tiger_*`, `bronze_irs_state_outflows`, `bronze_irs_county_outflows`
+- **Status:** Working
+- **Credentials:** AWS via `AWS_PROFILE` env var (no static keys in `.env`)
 
 **S3 structure after ingestion:**
 ```
 s3://population-demographics-iceberg/
-├── bronze/
-│   └── census_acs5/
-│       ├── states/           (.parquet)
-│       ├── counties/         (.parquet)
-│       └── tracts_ca/         (.parquet)
-└── silver/
-    └── census_acs5/
-        ├── states/           (Iceberg)
-        ├── counties/         (Iceberg)
-        └── tracts/           (Iceberg)
+└── bronze/
+    ├── census_acs5/
+    │   ├── states/year=YYYY/            (.parquet)
+    │   ├── counties/year=YYYY/           (.parquet)
+    │   └── tracts/year=YYYY/state=FF/    (.parquet)
+    ├── census_tiger/
+    │   ├── states/year=YYYY/             (.parquet)
+    │   ├── counties/year=YYYY/state=FF/   (.parquet)
+    │   └── tracts/year=YYYY/state=FF/     (.parquet)
+    └── irs/
+        └── migration/
+            ├── state_outflows/year=YYYY/  (.parquet)
+            └── county_outflows/year=YYYY/  (.parquet)
 ```
 
-### Stage 2: Iceberg Conversion ✅
+**Schema (Census ACS5 bronze):**
+| Column | Type | Description |
+|--------|------|-------------|
+| `NAME` | string | Geography name |
+| `total_population` | string | B01001_001E |
+| `median_age` | string | B01002_001E |
+| `white_alone_not_hispanic` | string | B03002_003E |
+| ... | ... | (other ACS variables) |
+| `survey_year` | int64 | Partition year |
+| `ingest_date` | string | ISO date of ingestion |
 
-- **Tool:** Athena CTAS (CREATE TABLE AS SELECT to convert parquet → Iceberg)
+**Schema (IRS bronze):**
+| Column | Type | Description |
+|--------|------|-------------|
+| `y1_statefips` | string | Origin state FIPS |
+| `y2_statefips` | string | Destination state FIPS (96/97/98 = aggregate totals, excluded in silver) |
+| `y2_state` | string | Destination state abbreviation |
+| `y2_state_name` | string | Destination state name |
+| `n1` | string | Non-exempt returns |
+| `n2` | string | Exempt returns |
+| `AGI` | string | Adjusted gross income ($000s) |
+| `survey_year` | int64 | Partition year (second year of migration period) |
+| `ingest_date` | string | ISO date of ingestion |
+
+### Stage 2: Silver — Iceberg Tables via Dagster Assets ✅
+
+- **Tool:** Dagster `@asset` with `required_resource_keys={"athena"}` → Athena Iceberg tables
 - **Why:** Iceberg adds ACID transactions, time-travel, partition evolution
-- **Process:**
-  1. Drop any existing silver table (graceful handling if not exists)
-  2. Create external table over bronze parquet in `population_demographics_silver`
-  3. Run CTAS with schema transformations and deduplication
-  4. Clean up external table
-- **Result:** Iceberg tables in `population_demographics_silver` database
-- **Assets:** `census_states_silver`, `census_counties_silver`, `census_tracts_ca_silver`
-- **Schema transformations:**
-  - `NAME` → `geography_name`
-  - `state`/`county`/`tract` → `state_fips`/`county_fips`/`tract_fips` (LPAD padded)
-  - `state` + `county` + `tract` → `geography_id` (concatenated FIPS)
-  - Year constant added
-  - All numeric columns cast from string (dlt writes Census API data as binary strings)
-- **Partitioning:**
-  - `census_states_silver`: by `state` (52 partitions)
-  - `census_counties_silver`: by `state` only (avoid ~3000+ county partitions exceeding 100 writer limit)
-  - `census_tracts_ca_silver`: by `state, county, tract`
-- **Deduplication:** Latest record per geography (ROW_NUMBER PARTITION BY geography ORDER BY ingest_date DESC)
-- **Key fixes applied:**
-  - `is_external = false` in Iceberg WITH clause (managed tables only)
-  - Explicit CAST to BIGINT/DOUBLE for all numeric columns (parquet binary vs expected types)
-  - Raw partition columns included in CTAS SELECT output
-  - Graceful DROP TABLE handling for metastore inconsistencies
-- **Status:** Working — all 3 assets materialized successfully as Iceberg tables
+- **Process (idempotent backfill per partition):**
+  1. `DROP TABLE IF EXISTS ext_{year}` — clean up any stale external table
+  2. `CREATE EXTERNAL TABLE` over bronze parquet in `population_demographics_silver`
+  3. `DELETE FROM silver_{geo} WHERE survey_year = {year}` — remove existing data for this partition
+  4. `INSERT INTO silver_{geo}` — write transformed data from external table
+  5. `DROP TABLE ext_{year}` — clean up external table
+- **Result:** Iceberg tables partitioned by `survey_year`, all years in one table per asset
+- **Assets:** `silver_acs5_states`, `silver_acs5_counties`, `silver_acs5_tracts`, `silver_tiger_states`, `silver_tiger_counties`, `silver_tiger_tracts`, `silver_irs_state_outflows`, `silver_irs_county_outflows`
+
+**Schema (silver_acs5_states / counties / tracts):**
+| Column | Type | Description |
+|--------|------|-------------|
+| `geography_name` | STRING | NAME from Census |
+| `state_fips` | STRING | Zero-padded 2-digit state FIPS |
+| `county_fips` | STRING | Zero-padded 3-digit county FIPS |
+| `tract_fips` | STRING | Census tract code |
+| `geography_id` | STRING | Concatenated FIPS (state+county+tract) |
+| `survey_year` | INT | Year partition |
+| `total_population` | BIGINT | B01001_001E |
+| `median_age` | DOUBLE | B01002_001E |
+| `white_alone_not_hispanic` | BIGINT | B03002_003E |
+| `black_alone_not_hispanic` | BIGINT | B03002_004E |
+| `asian_alone_not_hispanic` | BIGINT | B03002_006E |
+| `hispanic_or_latino` | BIGINT | B03002_012E |
+| `median_household_income` | BIGINT | B19013_001E |
+| `poverty_total` | BIGINT | B17001_001E |
+| `below_poverty_level` | BIGINT | B17001_002E |
+| `education_total_25y_plus` | BIGINT | B15003_001E |
+| `bachelors_degree` | BIGINT | B15003_022E |
+| `masters_degree` | BIGINT | B15003_023E |
+| `professional_degree` | BIGINT | B15003_024E |
+| `doctorate_degree` | BIGINT | B15003_025E |
+| `high_school_diploma` | BIGINT | B15003_017E |
+| `no_high_school_diploma` | BIGINT | B15003_002E |
+| `median_home_value` | BIGINT | B25077_001E |
+| `total_occupied` | BIGINT | B25003_001E |
+| `owner_occupied` | BIGINT | B25003_002E |
+| `renter_occupied` | BIGINT | B25003_003E |
+| `median_gross_rent` | BIGINT | B25064_001E |
+| `migration_total` | BIGINT | B07001_001E (persons living in different address 1 year ago) |
+| `commute_total_workers_16_plus` | BIGINT | B08301_001E |
+| `drove_alone_to_work` | BIGINT | B08301_003E |
+| `walked_to_work` | BIGINT | B08301_019E |
+| `worked_from_home` | BIGINT | B08301_021E |
+
+**Schema (silver_irs_state_outflows):**
+| Column | Type | Description |
+|--------|------|-------------|
+| `origin_geography_id` | STRING | LPAD state FIPS, e.g. "06" for California |
+| `dest_geography_id` | STRING | LPAD dest state FIPS |
+| `dest_state` | STRING | Destination state abbreviation (e.g. "TX") |
+| `dest_name` | STRING | Destination state name |
+| `households` | BIGINT | Non-exempt returns (n1) |
+| `individuals` | BIGINT | Exempt returns (n2) |
+| `agi` | BIGINT | Adjusted gross income ($000s) |
+| `survey_year` | INT | Year partition (2012–2023) |
+
+**Schema (silver_irs_county_outflows):**
+| Column | Type | Description |
+|--------|------|-------------|
+| `origin_geography_id` | STRING | CONCAT(LPAD state,2,'0'), LPAD county,3,'0') — 5-digit county FIPS |
+| `dest_geography_id` | STRING | Same construction for destination |
+| `dest_state` | STRING | Destination state abbreviation |
+| `dest_name` | STRING | Destination county name |
+| `households` | BIGINT | Non-exempt returns |
+| `individuals` | BIGINT | Exempt returns |
+| `agi` | BIGINT | Adjusted gross income ($000s) |
+| `survey_year` | INT | Year partition (2012–2023) |
+
+**Note:** IRS aggregate rows (y2_statefips IN '96', '97', '98', '59', '57') and suppressed flows (n1/n2 = -1) are filtered out during INSERT — bronze keeps them raw, silver excludes them.
+
+**Status:** Working — ACS5, TIGER, and IRS silver assets implemented and validated.
 
 ### Stage 3: Data Transformation (Silver → Gold)
 
-- **Tool:** dbt or SQL transformations via Athena
-- **Silver:** Cleaned, deduplicated, joined census data
-- **Gold:** Socioeconomic models, regional comparisons
-- **Status:** Pending
+- **Tool:** Dagster `@asset` with Athena SQL (INSERT INTO Iceberg from JOIN of silver tables)
+- **Silver:** Cleaned ACS5 + TIGER data + IRS migration outflows
+- **Gold:** Socioeconomic models, migration edges, regional comparisons
+- **Status:** Working
 
 ### Stage 4: Analytics & Visualization
 

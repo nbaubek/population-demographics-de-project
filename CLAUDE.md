@@ -36,5 +36,9 @@ API credentials are stored in `dagster-orch/.env` which is gitignored.
 
 CRITICAL: never ask for credentials in chat. Always let the user edit secrets directly and do not attempt to read them.
 
+### Handling commits
+
+Do not ever include "Co-Authored by Claude" or similar messages as commit messages.
+
 ---
 
