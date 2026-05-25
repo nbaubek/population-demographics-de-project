@@ -28,9 +28,15 @@ Each geography level includes the FIPS code as a column (e.g. "state": "01" for 
     - [Search Table IDs and Variables by the code](https://data.census.gov/table/)
     - Since this API allows to query by geographic entities, here's the [hierarchy](https://www2.census.gov/geo/pdfs/reference/geodiagram.pdf) of how those entities relate to each other.
 
-2. [**World Bank API**](https://data360.worldbank.org/en/api)
-3. [**Data Commons API**](https://docs.datacommons.org/api/)
+2. [**IRS SOI Tax Stats - Migration data**](https://www.irs.gov/pub/irs-soi/1213inpublicmigdoc.pdf)
+3. [**BLS LAUS**](https://www.bls.gov/lau/data.htm)
 4. **TIGER/Line GIS Data** — Topologically Integrated Geographic Encoding and Referencing system. Provides geographic boundary files (states, counties, census tracts) used for spatial joins and visualization. See [GIS Geography explainer](https://gisgeography.com/tiger-gis-data-topologically-integrated-geographic-encoding-referencing/).
+
+Another data source from IRS called "SOI tax stats - Personal wealth statistics" is good for future analysis enrichment possibility.
+
+Once the core platform is working, IRS wealth data could become a gold node (as part of a knowledge graph) attribute answering:
+
+> "Does high median income in a county correlate with high asset wealth, or are they decoupled?"
 
 ---
 

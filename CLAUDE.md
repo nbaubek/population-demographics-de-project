@@ -22,7 +22,7 @@
 Dagster has its own virtual environment under `dagster-orch/` directory. It can be activated with `source .venv/bin/activate` inside that Dagster directory. Don't mix up virtual environments in order to avoid installing wrong dependencies in incorrect virtual environments.
 
 Virtual environment rules:
-- Dagster venv: `cd dagster-orch && source .venv/bin/activate` — for dg commands, dagster-dlt, and orchestrating dlt pipelines
+- Dagster venv: `cd dagster-orch && source .venv/bin/activate` — for dg commands, dagster components, and other built-in functionality
 
 
 **Troubleshooting Dagster:**
@@ -32,7 +32,7 @@ Virtual environment rules:
 
 ### Handling secret credentials
 
-API credentials are stored in `dagster-orch/.dlt/secrets.toml` which is gitignored.
+API credentials are stored in `dagster-orch/.env` which is gitignored.
 
 CRITICAL: never ask for credentials in chat. Always let the user edit secrets directly and do not attempt to read them.
 
