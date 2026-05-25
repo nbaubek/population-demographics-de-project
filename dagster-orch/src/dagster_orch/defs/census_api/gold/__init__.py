@@ -1,9 +1,8 @@
-# Gold module - joined ACS5 + TIGER tables
-from dagster_orch.defs.census_api.gold.assets import gold_states, gold_counties, gold_tracts
-from dagster_orch.defs.census_api.gold.jobs import gold_job
-
-# Asset checks
-from dagster_orch.defs.census_api.gold.checks import (
+# Gold module - joined ACS5 + TIGER tables (census) and IRS migration (separate)
+from dagster_orch.defs.census_api.gold.census import (
+    gold_states,
+    gold_counties,
+    gold_tracts,
     check_gold_states_row_count,
     check_gold_counties_row_count,
     check_gold_tracts_row_count,
@@ -19,12 +18,14 @@ from dagster_orch.defs.census_api.gold.checks import (
     check_gold_states_ca_population,
 )
 
+from dagster_orch.defs.census_api.gold.jobs import gold_job
+
 __all__ = [
     "gold_states",
     "gold_counties",
     "gold_tracts",
     "gold_job",
-    # Checks
+    # Census checks
     "check_gold_states_row_count",
     "check_gold_counties_row_count",
     "check_gold_tracts_row_count",

@@ -1,0 +1,11 @@
+[32m2026-05-25 16:11:10 +0500[0m - dagster - [34mDEBUG[0m - __ASSET_JOB - 1499c675-746c-452f-a874-f3b01758d218 - 32955 - LOGS_CAPTURED - Capturing logs for process (pid: 32955).
+[32m2026-05-25 16:11:10 +0500[0m - dagster - [34mDEBUG[0m - __ASSET_JOB - 1499c675-746c-452f-a874-f3b01758d218 - 32955 - silver_tiger_counties - STEP_START - Started execution of step "silver_tiger_counties".
+[32m2026-05-25 16:11:22 +0500[0m - dagster - [34mINFO[0m - __ASSET_JOB - 1499c675-746c-452f-a874-f3b01758d218 - silver_tiger_counties - Iceberg table population_demographics_silver.silver_tiger_counties already exists, skipping creation
+[32m2026-05-25 16:11:22 +0500[0m - dagster - [34mINFO[0m - __ASSET_JOB - 1499c675-746c-452f-a874-f3b01758d218 - silver_tiger_counties - Starting silver_tiger_counties for year=2021
+[32m2026-05-25 16:11:28 +0500[0m - dagster - [34mINFO[0m - __ASSET_JOB - 1499c675-746c-452f-a874-f3b01758d218 - silver_tiger_counties - Created external table over bronze: s3://population-demographics-iceberg/bronze/tiger/counties/year=2021
+[32m2026-05-25 16:11:33 +0500[0m - dagster - [34mINFO[0m - __ASSET_JOB - 1499c675-746c-452f-a874-f3b01758d218 - silver_tiger_counties - Deleted existing data for survey_year=2021
+[32m2026-05-25 16:11:39 +0500[0m - dagster - [34mINFO[0m - __ASSET_JOB - 1499c675-746c-452f-a874-f3b01758d218 - silver_tiger_counties - Inserting fresh data for survey_year=2021
+[32m2026-05-25 16:11:45 +0500[0m - dagster - [34mINFO[0m - __ASSET_JOB - 1499c675-746c-452f-a874-f3b01758d218 - silver_tiger_counties - Cleaning up external table
+[32m2026-05-25 16:11:50 +0500[0m - dagster - [34mDEBUG[0m - __ASSET_JOB - 1499c675-746c-452f-a874-f3b01758d218 - 32955 - silver_tiger_counties - STEP_OUTPUT - Yielded output "result" of type "Any". (Type check passed).
+[32m2026-05-25 16:11:50 +0500[0m - dagster - [34mDEBUG[0m - __ASSET_JOB - 1499c675-746c-452f-a874-f3b01758d218 - 32955 - silver_tiger_counties - ASSET_MATERIALIZATION - Materialized value silver_tiger_counties.
+[32m2026-05-25 16:11:50 +0500[0m - dagster - [34mDEBUG[0m - __ASSET_JOB - 1499c675-746c-452f-a874-f3b01758d218 - 32955 - silver_tiger_counties - STEP_SUCCESS - Finished execution of step "silver_tiger_counties" in 40.12s.

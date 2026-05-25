@@ -8,7 +8,17 @@ TIGER/Line shapefiles from the Census Bureau provide geographic boundary files (
 
 TIGER data is stored with `geometry_wkt` column containing Well-Known Text representations of polygon boundaries. This is used downstream for Kepler.gl visualization.
 
-**Critical:** Missing geometry (`geometry_wkt IS NULL`) will silently pass through bronze and silver, then break Kepler.gl rendering. An asset check on the bronze layer catches this.
+**Critical:** Missing geometry (`geometry_wkt IS NULL`) will silently pass through bronze and silver, then break Kepler.gl rendering. A bronze-layer asset check catches this — there is no silver-layer guard because silver only validates ACS metric columns, not TIGER geometry.
+
+## Why Bronze Layer Only Has TIGER Checks
+
+Bronze layer asset checks exist only for TIGER geometry. This is deliberate:
+
+- **ACS columns (FIPS codes, counts, income, etc.):** Validated in silver layer checks — NULL or malformed values would be caught before reaching gold.
+- **IRS columns (origin/dest FIPS, households, individuals, AGI):** Same pattern — validated in silver.
+- **TIGER `geometry_wkt`:** Has no silver-level validation guard. A NULL geometry passes through silver undetected and only fails at the Kepler.gl visualization stage.
+
+The TIGER bronze check (`check_geometry_not_null`) creates a temporary external table over bronze parquet, checks `COUNT(*) = COUNT(geometry_wkt)` for each geography, and raises ERROR severity if any rows are missing geometry.
 
 ## Boundary Changes
 

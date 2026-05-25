@@ -300,10 +300,12 @@ The workgroup is configured with `bytes_scanned_cutoff_per_query = 1073741824` (
 
 Asset checks run after each materialization to catch data quality issues before they reach downstream layers. Located in `dagster-orch/src/dagster_orch/defs/census_api/{silver,gold}/checks.py`.
 
-**Bronze layer** (`bronze/tiger/checks.py`):
-- `check_geometry_not_null` — `geometry_wkt` must be non-null for every row. A missing geometry silently passes through to silver and breaks Kepler.gl downstream.
+**Bronze layer** (`bronze/tiger/checks.py`) — TIGER only:
+- `check_geometry_not_null` — `geometry_wkt` must be non-null for every row. Geometry NULLs silently pass through silver and only surface as broken maps in Kepler.gl — no silver-level guard exists for this column.
 
-**Silver layer** (`silver/{acs5,tiger}/checks.py`):
+**Why bronze has checks only for TIGER:** ACS and IRS columns (FIPS codes, counts, income, etc.) are validated in silver checks. TIGER `geometry_wkt` has no silver-layer validation — a NULL would go undetected until visualization. The geometry check is the only bronze check warranted; ACS and IRS quality is managed downstream.
+
+**Silver layer** (`silver/{acs5,tiger,irs}/checks.py`):
 - `check_row_counts_per_year` — expected 52 states, ~3,212 counties, ~73,000 tracts per year
 - `check_no_null_geography_id` — no null join keys
 - `check_no_duplicate_keys` — no duplicate `(geography_id, survey_year)` composites

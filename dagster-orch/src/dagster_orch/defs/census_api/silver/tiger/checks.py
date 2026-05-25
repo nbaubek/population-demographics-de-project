@@ -4,7 +4,10 @@ These checks run after each silver_tiger_* materialization and catch data qualit
 issues before the data reaches the gold layer.
 """
 
-from dagster import AssetCheckResult, AssetCheckSeverity, asset_check
+import dagster as dg
+from dagster import AssetCheckResult, AssetCheckSeverity
+
+from dagster_orch.defs.census_api.shared.athena_query import athena_query
 
 SILVER_DB = "population_demographics_silver"
 
@@ -13,11 +16,10 @@ APPROX_COUNTY_COUNT_MIN_TIGER = 3225
 MIN_TRACT_COUNT = 73000
 
 
-@asset_check(asset="silver_tiger_states", name="check_row_counts_per_year")
+@dg.asset_check(asset="silver_tiger_states", name="check_row_counts_per_year", required_resource_keys={"athena"})
 def check_silver_tiger_states_row_count(context) -> AssetCheckResult:
     """Every survey_year should have exactly 56 state rows (50 states + DC + 4 territories)."""
-    athena = context.resources.athena
-    result = athena.execute_query(f"""
+    result = athena_query(context.resources.athena, f"""
         SELECT survey_year, COUNT(*) as row_count
         FROM {SILVER_DB}.silver_tiger_states
         GROUP BY survey_year
@@ -35,11 +37,10 @@ def check_silver_tiger_states_row_count(context) -> AssetCheckResult:
     )
 
 
-@asset_check(asset="silver_tiger_counties", name="check_row_counts_per_year")
+@dg.asset_check(asset="silver_tiger_counties", name="check_row_counts_per_year", required_resource_keys={"athena"})
 def check_silver_tiger_counties_row_count(context) -> AssetCheckResult:
     """Each survey_year should have at least 3,225 county rows."""
-    athena = context.resources.athena
-    result = athena.execute_query(f"""
+    result = athena_query(context.resources.athena, f"""
         SELECT survey_year, COUNT(*) as row_count
         FROM {SILVER_DB}.silver_tiger_counties
         GROUP BY survey_year
@@ -57,11 +58,10 @@ def check_silver_tiger_counties_row_count(context) -> AssetCheckResult:
     )
 
 
-@asset_check(asset="silver_tiger_tracts", name="check_row_counts_per_year")
+@dg.asset_check(asset="silver_tiger_tracts", name="check_row_counts_per_year", required_resource_keys={"athena"})
 def check_silver_tiger_tracts_row_count(context) -> AssetCheckResult:
     """Each survey_year should have at least 73,000 tract rows."""
-    athena = context.resources.athena
-    result = athena.execute_query(f"""
+    result = athena_query(context.resources.athena, f"""
         SELECT survey_year, COUNT(*) as row_count
         FROM {SILVER_DB}.silver_tiger_tracts
         GROUP BY survey_year
@@ -79,11 +79,10 @@ def check_silver_tiger_tracts_row_count(context) -> AssetCheckResult:
     )
 
 
-@asset_check(asset="silver_tiger_states", name="check_no_null_geography_id")
+@dg.asset_check(asset="silver_tiger_states", name="check_no_null_geography_id", required_resource_keys={"athena"})
 def check_silver_tiger_states_no_null_geo_id(context) -> AssetCheckResult:
     """No rows should have a null geography_id."""
-    athena = context.resources.athena
-    result = athena.execute_query(f"""
+    result = athena_query(context.resources.athena, f"""
         SELECT COUNT(*) as null_count
         FROM {SILVER_DB}.silver_tiger_states
         WHERE geography_id IS NULL
@@ -96,11 +95,10 @@ def check_silver_tiger_states_no_null_geo_id(context) -> AssetCheckResult:
     )
 
 
-@asset_check(asset="silver_tiger_counties", name="check_no_null_geography_id")
+@dg.asset_check(asset="silver_tiger_counties", name="check_no_null_geography_id", required_resource_keys={"athena"})
 def check_silver_tiger_counties_no_null_geo_id(context) -> AssetCheckResult:
     """No rows should have a null geography_id."""
-    athena = context.resources.athena
-    result = athena.execute_query(f"""
+    result = athena_query(context.resources.athena, f"""
         SELECT COUNT(*) as null_count
         FROM {SILVER_DB}.silver_tiger_counties
         WHERE geography_id IS NULL
@@ -113,11 +111,10 @@ def check_silver_tiger_counties_no_null_geo_id(context) -> AssetCheckResult:
     )
 
 
-@asset_check(asset="silver_tiger_tracts", name="check_no_null_geography_id")
+@dg.asset_check(asset="silver_tiger_tracts", name="check_no_null_geography_id", required_resource_keys={"athena"})
 def check_silver_tiger_tracts_no_null_geo_id(context) -> AssetCheckResult:
     """No rows should have a null geography_id."""
-    athena = context.resources.athena
-    result = athena.execute_query(f"""
+    result = athena_query(context.resources.athena, f"""
         SELECT COUNT(*) as null_count
         FROM {SILVER_DB}.silver_tiger_tracts
         WHERE geography_id IS NULL
@@ -130,11 +127,10 @@ def check_silver_tiger_tracts_no_null_geo_id(context) -> AssetCheckResult:
     )
 
 
-@asset_check(asset="silver_tiger_states", name="check_no_duplicate_keys")
+@dg.asset_check(asset="silver_tiger_states", name="check_no_duplicate_keys", required_resource_keys={"athena"})
 def check_silver_tiger_states_no_duplicate_keys(context) -> AssetCheckResult:
     """No duplicate (geography_id, survey_year) composite keys."""
-    athena = context.resources.athena
-    result = athena.execute_query(f"""
+    result = athena_query(context.resources.athena, f"""
         SELECT geography_id, survey_year, COUNT(*) as cnt
         FROM {SILVER_DB}.silver_tiger_states
         GROUP BY geography_id, survey_year
@@ -150,11 +146,10 @@ def check_silver_tiger_states_no_duplicate_keys(context) -> AssetCheckResult:
     )
 
 
-@asset_check(asset="silver_tiger_counties", name="check_no_duplicate_keys")
+@dg.asset_check(asset="silver_tiger_counties", name="check_no_duplicate_keys", required_resource_keys={"athena"})
 def check_silver_tiger_counties_no_duplicate_keys(context) -> AssetCheckResult:
     """No duplicate (geography_id, survey_year) composite keys."""
-    athena = context.resources.athena
-    result = athena.execute_query(f"""
+    result = athena_query(context.resources.athena, f"""
         SELECT geography_id, survey_year, COUNT(*) as cnt
         FROM {SILVER_DB}.silver_tiger_counties
         GROUP BY geography_id, survey_year
@@ -170,11 +165,10 @@ def check_silver_tiger_counties_no_duplicate_keys(context) -> AssetCheckResult:
     )
 
 
-@asset_check(asset="silver_tiger_tracts", name="check_no_duplicate_keys")
+@dg.asset_check(asset="silver_tiger_tracts", name="check_no_duplicate_keys", required_resource_keys={"athena"})
 def check_silver_tiger_tracts_no_duplicate_keys(context) -> AssetCheckResult:
     """No duplicate (geography_id, survey_year) composite keys."""
-    athena = context.resources.athena
-    result = athena.execute_query(f"""
+    result = athena_query(context.resources.athena, f"""
         SELECT geography_id, survey_year, COUNT(*) as cnt
         FROM {SILVER_DB}.silver_tiger_tracts
         GROUP BY geography_id, survey_year
@@ -190,11 +184,10 @@ def check_silver_tiger_tracts_no_duplicate_keys(context) -> AssetCheckResult:
     )
 
 
-@asset_check(asset="silver_tiger_states", name="check_all_years_present")
+@dg.asset_check(asset="silver_tiger_states", name="check_all_years_present", required_resource_keys={"athena"})
 def check_silver_tiger_states_all_years_present(context) -> AssetCheckResult:
     """All 13 years (2012-2024) should be present in the table."""
-    athena = context.resources.athena
-    result = athena.execute_query(f"""
+    result = athena_query(context.resources.athena, f"""
         SELECT COUNT(DISTINCT survey_year) as year_count
         FROM {SILVER_DB}.silver_tiger_states
     """)
@@ -206,11 +199,10 @@ def check_silver_tiger_states_all_years_present(context) -> AssetCheckResult:
     )
 
 
-@asset_check(asset="silver_tiger_counties", name="check_all_years_present")
+@dg.asset_check(asset="silver_tiger_counties", name="check_all_years_present", required_resource_keys={"athena"})
 def check_silver_tiger_counties_all_years_present(context) -> AssetCheckResult:
     """All 13 years (2012-2024) should be present in the table."""
-    athena = context.resources.athena
-    result = athena.execute_query(f"""
+    result = athena_query(context.resources.athena, f"""
         SELECT COUNT(DISTINCT survey_year) as year_count
         FROM {SILVER_DB}.silver_tiger_counties
     """)
@@ -222,11 +214,10 @@ def check_silver_tiger_counties_all_years_present(context) -> AssetCheckResult:
     )
 
 
-@asset_check(asset="silver_tiger_tracts", name="check_all_years_present")
+@dg.asset_check(asset="silver_tiger_tracts", name="check_all_years_present", required_resource_keys={"athena"})
 def check_silver_tiger_tracts_all_years_present(context) -> AssetCheckResult:
     """All 13 years (2012-2024) should be present in the table."""
-    athena = context.resources.athena
-    result = athena.execute_query(f"""
+    result = athena_query(context.resources.athena, f"""
         SELECT COUNT(DISTINCT survey_year) as year_count
         FROM {SILVER_DB}.silver_tiger_tracts
     """)

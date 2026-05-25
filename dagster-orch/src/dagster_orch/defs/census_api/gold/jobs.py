@@ -2,7 +2,7 @@
 
 import dagster as dg
 
-from dagster_orch.defs.census_api.gold.assets import (
+from dagster_orch.defs.census_api.gold.census.assets import (
     gold_states,
     gold_counties,
     gold_tracts,

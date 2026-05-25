@@ -1,0 +1,11 @@
+[32m2026-05-25 15:36:47 +0500[0m - dagster - [34mDEBUG[0m - __ASSET_JOB - 31b6b058-15cb-4090-abf2-66941411c7f2 - 14558 - LOGS_CAPTURED - Capturing logs for process (pid: 14558).
+[32m2026-05-25 15:36:47 +0500[0m - dagster - [34mDEBUG[0m - __ASSET_JOB - 31b6b058-15cb-4090-abf2-66941411c7f2 - 14558 - silver_irs_county_outflows - STEP_START - Started execution of step "silver_irs_county_outflows".
+[32m2026-05-25 15:36:48 +0500[0m - dagster - [34mINFO[0m - __ASSET_JOB - 31b6b058-15cb-4090-abf2-66941411c7f2 - silver_irs_county_outflows - Starting silver_irs_county_outflows for year=2015
+[32m2026-05-25 15:37:00 +0500[0m - dagster - [34mINFO[0m - __ASSET_JOB - 31b6b058-15cb-4090-abf2-66941411c7f2 - silver_irs_county_outflows - Iceberg table population_demographics_silver.silver_irs_county_outflows already exists
+[32m2026-05-25 15:37:05 +0500[0m - dagster - [34mINFO[0m - __ASSET_JOB - 31b6b058-15cb-4090-abf2-66941411c7f2 - silver_irs_county_outflows - Created external table over bronze: s3://population-demographics-iceberg/bronze/irs/migration/county_outflows/year=2015
+[32m2026-05-25 15:37:17 +0500[0m - dagster - [34mINFO[0m - __ASSET_JOB - 31b6b058-15cb-4090-abf2-66941411c7f2 - silver_irs_county_outflows - Deleted existing data for survey_year=2015
+[32m2026-05-25 15:37:17 +0500[0m - dagster - [34mINFO[0m - __ASSET_JOB - 31b6b058-15cb-4090-abf2-66941411c7f2 - silver_irs_county_outflows - Inserting fresh data for survey_year=2015
+[32m2026-05-25 15:37:23 +0500[0m - dagster - [34mINFO[0m - __ASSET_JOB - 31b6b058-15cb-4090-abf2-66941411c7f2 - silver_irs_county_outflows - Cleaning up external table
+[32m2026-05-25 15:37:28 +0500[0m - dagster - [34mDEBUG[0m - __ASSET_JOB - 31b6b058-15cb-4090-abf2-66941411c7f2 - 14558 - silver_irs_county_outflows - STEP_OUTPUT - Yielded output "result" of type "Any". (Type check passed).
+[32m2026-05-25 15:37:28 +0500[0m - dagster - [34mDEBUG[0m - __ASSET_JOB - 31b6b058-15cb-4090-abf2-66941411c7f2 - 14558 - silver_irs_county_outflows - ASSET_MATERIALIZATION - Materialized value silver_irs_county_outflows.
+[32m2026-05-25 15:37:28 +0500[0m - dagster - [34mDEBUG[0m - __ASSET_JOB - 31b6b058-15cb-4090-abf2-66941411c7f2 - 14558 - silver_irs_county_outflows - STEP_SUCCESS - Finished execution of step "silver_irs_county_outflows" in 40.97s.

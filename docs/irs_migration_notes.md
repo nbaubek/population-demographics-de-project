@@ -98,4 +98,6 @@ Downstream consumers should be aware that 2014+ county analysis covers fewer flo
 ## Relevant Links
 
 - [IRS SOI Migration Data](https://www.irs.gov/statistics/soi-tax-stats-migration-data)
+- [IRS SOI Migration Data Dictionary 2011–2012 (PDF)](https://www.irs.gov/pub/irs-soi/1213inpublicmigdoc.pdf)
+- [IRS SOI Migration Data Dictionary 2022–2023 (PDF)](https://www.irs.gov/pub/irs-soi/2223inpublicmigdoc.pdf)
 - [IRS SOI Data Documentation](https://www.irs.gov/statistics/soi-tax-stats-publications)
