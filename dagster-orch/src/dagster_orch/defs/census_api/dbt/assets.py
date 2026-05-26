@@ -8,13 +8,10 @@ import dagster as dg
 from dagster_dbt import DbtProject
 
 # Path to the dbt project directory (relative to this file's location)
-DBT_PROJECT_PATH = "../dbt/population_demographics"
+DBT_PROJECT_PATH = "/Users/narimanb/de-portfolio-projects/population-demographics-pipeline/dagster-orch/dbt/population_demographics"
 
 
-dbt_project = DbtProject(
-    project_dir=DBT_PROJECT_PATH,
-    raise_on_partial_data=False,
-)
+dbt_project = DbtProject(project_dir=DBT_PROJECT_PATH)
 
 
 def get_dbt_assets():

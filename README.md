@@ -1,4 +1,11 @@
-# Population Demographics Data Engineering Pipeline Project
+# DemographIQ
+
+A data engineering platform for analyzing U.S. socioeconomic patterns across geographies and time.
+
+Built on a modern data lakehouse architecture (Bronze → Silver → Gold), DemographIQ ingests, 
+transforms, and models Census ACS, TIGER/Line, and IRS migration data to uncover demographic 
+trends, economic mobility, and population movement across states, counties, and census tracts 
+from 2012 to 2024.
 
 ---
 
@@ -78,6 +85,8 @@ The answer I'm trying to provide is:
 
 ## Overview of the Project in Stages
 
+This project uses 
+
 **Stack:** Dagster (orchestration) + AWS S3/Glue/Athena (storage/query)
 
 ### Stage 1: Raw Data Ingestion (Bronze → S3) ✅
@@ -121,7 +130,7 @@ s3://population-demographics-iceberg/
 | Column | Type | Description |
 |--------|------|-------------|
 | `y1_statefips` | string | Origin state FIPS |
-| `y2_statefips` | string | Destination state FIPS (96/97/98 = aggregate totals, excluded in silver) |
+| `y2_statefips` | string | Destination state FIPS (96/97/98/59/57/58) = aggregate totals, excluded in silver) |
 | `y2_state` | string | Destination state abbreviation |
 | `y2_state_name` | string | Destination state name |
 | `n1` | string | Non-exempt returns |

@@ -1,0 +1,11 @@
+run_storage:
+  module: dagster.core.storage.root
+  class: DagsterLocalStorage
+  config:
+    base_dir: /Users/narimanb/de-portfolio-projects/population-demographics-pipeline/dagster-orch/dagster_home/storage
+
+run_coordinator:
+  module: dagster.core.run_coordinator
+  class: QueuedRunCoordinator
+  config:
+    max_concurrent_runs: 4

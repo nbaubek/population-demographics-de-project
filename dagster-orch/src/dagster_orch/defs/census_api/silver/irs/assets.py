@@ -190,8 +190,9 @@ def _build_silver_irs_asset(geography: str):
             --   98 = Total Migration Foreign (Puerto Rico + Abroad)
             --   59 = Puerto Rico aggregate flows (IRS internal code)
             --   57 = Foreign (separate code, distinct from 98)
+            --   58 = Same-state aggregate flows (distinct from 57)
             --   n1/n2 = -1 means IRS suppressed the flow for privacy
-            WHERE CAST(y2_statefips AS INT) NOT IN (96, 97, 98, 59, 57)
+            WHERE CAST(y2_statefips AS INT) NOT IN (96, 97, 98, 59, 57, 58)
               AND n1 != '-1'
               AND n2 != '-1'
             """
@@ -216,8 +217,9 @@ def _build_silver_irs_asset(geography: str):
             --   98 = Total Migration Foreign (Puerto Rico + Abroad)
             --   59 = Puerto Rico aggregate flows (IRS internal code)
             --   57 = Foreign (separate code, distinct from 98)
+            --   58 = Same-state aggregate flows (distinct from 57)
             --   n1/n2 = -1 means IRS suppressed the flow for privacy
-            WHERE CAST(y2_statefips AS INT) NOT IN (96, 97, 98, 59, 57)
+            WHERE CAST(y2_statefips AS INT) NOT IN (96, 97, 98, 59, 57, 58)
               AND n1 != '-1'
               AND n2 != '-1'
             """

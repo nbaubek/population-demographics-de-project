@@ -74,7 +74,11 @@ sources:
                   - survey_year
 
       - name: gold_irs_county_outflows
-        description: "One row per county-to-county migration flow per year (2012-2023)"
+        description: |
+          County-to-county IRS migration outflows. No unique key test applied because
+          IRS publishes aggregate destination codes (y2_countyfips=000 for county totals)
+          that legitimately share the same (origin, dest, year) combination.
+          Downstream mart filters to actual flows via is_non_migrant = false.
         columns:
           - name: origin_geography_id
             tests:
@@ -85,10 +89,3 @@ sources:
           - name: survey_year
             tests:
               - not_null
-        tests:
-          - dbt_utils.unique_combination_of_columns:
-              arguments:
-                combination_of_columns:
-                  - origin_geography_id
-                  - dest_geography_id
-                  - survey_year

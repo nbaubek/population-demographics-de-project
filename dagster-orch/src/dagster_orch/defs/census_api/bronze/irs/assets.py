@@ -3,7 +3,7 @@
 Downloads IRS migration CSV directly and uploads to S3 as parquet without local disk persistence.
 Partitioned by the second year of the migration period (e.g., 1112.csv → year=2012).
 
-Bronze layer stores raw source data unchanged. Filtering of aggregated total rows (96/97/98)
+Bronze layer stores raw source data unchanged. Filtering of aggregated total rows (96/97/98/99/58/57/59)
 happens at the silver layer.
 """
 
@@ -71,7 +71,7 @@ def _irs_county_url(year: int) -> str:
 def bronze_irs_state_outflows(context: dg.AssetExecutionContext) -> dg.MaterializeResult:
     """Download IRS state-to-state migration outflows and write to S3 as parquet.
 
-    Raw source data stored unchanged — aggregated total rows (96/97/98/99 codes) are
+    Raw source data stored unchanged — aggregated total rows (96/97/98/99/58/57/59 codes) are
     preserved as-is and filtered at the silver layer.
 
     Partition key is the second year of the migration period (e.g., 2012 for 2011-2012 data).
@@ -125,7 +125,7 @@ def bronze_irs_state_outflows(context: dg.AssetExecutionContext) -> dg.Materiali
 def bronze_irs_county_outflows(context: dg.AssetExecutionContext) -> dg.MaterializeResult:
     """Download IRS county-to-county migration outflows and write to S3 as parquet.
 
-    Raw source data stored unchanged — aggregated total rows (96/97/98/99 codes) are
+    Raw source data stored unchanged — aggregated total rows (96/97/98/99/58/57/59 codes) are
     preserved as-is and filtered at the silver layer.
 
     Partition key is the second year of the migration period (e.g., 2012 for 2011-2012 data).

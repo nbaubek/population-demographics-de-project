@@ -26,12 +26,13 @@ IRS uses special destination FIPS codes for aggregated flows:
 | `98` | Total Migration — Foreign (Puerto Rico + Abroad) |
 | `59` | Puerto Rico aggregate flows (IRS internal aggregation code, not a real FIPS) |
 | `57` | Foreign (distinct from 98 — separate IRS classification) |
+| `58` | Same-state aggregate flows (distinct from 57) |
 
 **Suppressed flows:** IRS suppresses flows below a privacy threshold. These are indicated by `n1 = -1` or `n2 = -1` and are excluded in the silver layer.
 
 These codes are stored raw in the bronze layer (as-is from IRS CSV) and filtered out during silver layer INSERT via:
 ```sql
-WHERE CAST(y2_statefips AS INT) NOT IN (96, 97, 98, 59, 57)
+WHERE CAST(y2_statefips AS INT) NOT IN (96, 97, 98, 59, 57, 58)
   AND n1 != '-1'
   AND n2 != '-1'
 ```
