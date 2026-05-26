@@ -1,0 +1,12 @@
+athena:
+  target: dev
+  outputs:
+    dev:
+      type: athena
+      s3_staging_dir: s3://population-demographics-athena-results/results/
+      s3_data_dir: s3://population-demographics-athena-results/dbt/
+      region_name: us-east-1
+      database: awsdatacatalog
+      schema: population_demographics_gold
+      work_group: population-demographics
+      threads: 4

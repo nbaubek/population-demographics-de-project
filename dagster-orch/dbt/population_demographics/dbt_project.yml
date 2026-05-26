@@ -1,0 +1,16 @@
+name: population_demographics
+version: 1.0.0
+
+require-dbt-version: ">=1.7.0"
+config-version: 2
+
+profile: athena
+
+models:
+  population_demographics:
+    staging:
+      +materialized: view
+      +schema: staging
+    marts:
+      +materialized: table
+      +schema: marts

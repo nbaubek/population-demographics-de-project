@@ -1,0 +1,42 @@
+{{
+  config(
+    materialized='view',
+    schema='staging'
+  )
+}}
+
+SELECT
+    geography_id,
+    survey_year,
+    geography_name,
+    state_fips,
+    total_population,
+    median_age,
+    white_alone_not_hispanic,
+    black_alone_not_hispanic,
+    asian_alone_not_hispanic,
+    hispanic_or_latino,
+    median_household_income,
+    poverty_total,
+    below_poverty_level,
+    education_total_25y_plus,
+    bachelors_degree,
+    masters_degree,
+    professional_degree,
+    doctorate_degree,
+    high_school_diploma,
+    no_high_school_diploma,
+    median_home_value,
+    total_occupied,
+    owner_occupied,
+    renter_occupied,
+    median_gross_rent,
+    migration_total,
+    commute_total_workers_16_plus,
+    drove_alone_to_work,
+    walked_to_work,
+    worked_from_home,
+    ALAND,
+    AWATER,
+    geometry_wkt
+FROM {{ source('gold', 'gold_states') }}

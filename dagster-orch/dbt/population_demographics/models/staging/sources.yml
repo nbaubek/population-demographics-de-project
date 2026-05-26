@@ -1,0 +1,94 @@
+version: 2
+
+sources:
+  - name: gold
+    database: awsdatacatalog
+    schema: population_demographics_gold
+    tables:
+      - name: gold_states
+        description: "One row per US state per survey year (2012-2023)"
+        columns:
+          - name: geography_id
+            tests:
+              - not_null
+          - name: survey_year
+            tests:
+              - not_null
+        tests:
+          - dbt_utils.unique_combination_of_columns:
+              arguments:
+                combination_of_columns:
+                  - geography_id
+                  - survey_year
+
+      - name: gold_counties
+        description: "One row per US county per survey year (2012-2023)"
+        columns:
+          - name: geography_id
+            tests:
+              - not_null
+          - name: survey_year
+            tests:
+              - not_null
+        tests:
+          - dbt_utils.unique_combination_of_columns:
+              arguments:
+                combination_of_columns:
+                  - geography_id
+                  - survey_year
+
+      - name: gold_tracts
+        description: "One row per US census tract per survey year (2012-2023)"
+        columns:
+          - name: geography_id
+            tests:
+              - not_null
+          - name: survey_year
+            tests:
+              - not_null
+        tests:
+          - dbt_utils.unique_combination_of_columns:
+              arguments:
+                combination_of_columns:
+                  - geography_id
+                  - survey_year
+
+      - name: gold_irs_state_outflows
+        description: "One row per state-to-state migration flow per year (2012-2023)"
+        columns:
+          - name: origin_geography_id
+            tests:
+              - not_null
+          - name: dest_geography_id
+            tests:
+              - not_null
+          - name: survey_year
+            tests:
+              - not_null
+        tests:
+          - dbt_utils.unique_combination_of_columns:
+              arguments:
+                combination_of_columns:
+                  - origin_geography_id
+                  - dest_geography_id
+                  - survey_year
+
+      - name: gold_irs_county_outflows
+        description: "One row per county-to-county migration flow per year (2012-2023)"
+        columns:
+          - name: origin_geography_id
+            tests:
+              - not_null
+          - name: dest_geography_id
+            tests:
+              - not_null
+          - name: survey_year
+            tests:
+              - not_null
+        tests:
+          - dbt_utils.unique_combination_of_columns:
+              arguments:
+                combination_of_columns:
+                  - origin_geography_id
+                  - dest_geography_id
+                  - survey_year
