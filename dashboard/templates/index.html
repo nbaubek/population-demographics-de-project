@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no">
+  <title>DemographIQ — U.S. Socioeconomic Atlas</title>
+  <script src="https://unpkg.com/deck.gl@latest/dist.min.js"></script>
+  <script src="https://unpkg.com/maplibre-gl@latest/dist/maplibre-gl.js"></script>
+  <link href="https://unpkg.com/maplibre-gl@latest/dist/maplibre-gl.css" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f1117; color: #e0e0e0; }
+
+    #map { width: 100vw; height: 100vh; }
+
+    /* Header */
+    #header {
+      position: absolute; top: 0; left: 0; right: 0;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 12px 20px;
+      background: rgba(15,17,23,0.92);
+      backdrop-filter: blur(8px);
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      z-index: 100;
+    }
+    #logo { font-size: 18px; font-weight: 700; color: #fff; letter-spacing: -0.5px; }
+    #logo span { color: #4f9cf9; }
+    #back-btn {
+      display: none; align-items: center; gap: 6px;
+      background: rgba(79,156,249,0.15); border: 1px solid rgba(79,156,249,0.3);
+      color: #4f9cf9; padding: 6px 14px; border-radius: 6px;
+      cursor: pointer; font-size: 13px; transition: all .2s;
+    }
+    #back-btn:hover { background: rgba(79,156,249,0.25); }
+    #view-label { font-size: 13px; color: rgba(255,255,255,0.5); }
+
+    /* Controls */
+    #controls {
+      position: absolute; top: 64px; left: 16px;
+      display: flex; flex-direction: column; gap: 10px;
+      z-index: 100; width: 240px;
+    }
+    .control-card {
+      background: rgba(15,17,23,0.92);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 10px; padding: 14px;
+    }
+    .control-label {
+      font-size: 11px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: .06em; color: rgba(255,255,255,0.4); margin-bottom: 8px;
+    }
+    select {
+      width: 100%; background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.12);
+      color: #e0e0e0; padding: 8px 10px; border-radius: 6px;
+      font-size: 13px; cursor: pointer; outline: none;
+    }
+    select:hover { border-color: rgba(79,156,249,0.4); }
+    .metric-description {
+      font-size: 11px; color: rgba(255,255,255,0.35);
+      margin-top: 6px; line-height: 1.4;
+    }
+
+    /* Year slider */
+    #year-display {
+      font-size: 22px; font-weight: 700; color: #fff;
+      text-align: center; margin-bottom: 8px;
+    }
+    input[type=range] {
+      width: 100%; accent-color: #4f9cf9; cursor: pointer;
+    }
+    .year-range { display: flex; justify-content: space-between; font-size: 10px; color: rgba(255,255,255,0.3); margin-top: 4px; }
+
+    /* Migration toggle */
+    .toggle-row { display: flex; align-items: center; justify-content: space-between; }
+    .toggle-label { font-size: 13px; color: rgba(255,255,255,0.7); }
+    .toggle {
+      position: relative; width: 36px; height: 20px;
+      background: rgba(255,255,255,0.1); border-radius: 10px;
+      cursor: pointer; transition: background .2s;
+    }
+    .toggle.on { background: #4f9cf9; }
+    .toggle::after {
+      content: ''; position: absolute; top: 2px; left: 2px;
+      width: 16px; height: 16px; background: #fff;
+      border-radius: 50%; transition: transform .2s;
+    }
+    .toggle.on::after { transform: translateX(16px); }
+    #migration-note { font-size: 10px; color: rgba(255,255,255,0.25); margin-top: 4px; }
+
+    /* Legend */
+    #legend {
+      position: absolute; bottom: 40px; left: 16px;
+      background: rgba(15,17,23,0.92);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 10px; padding: 12px 14px;
+      z-index: 100; min-width: 200px;
+    }
+    #legend-title { font-size: 12px; font-weight: 600; color: rgba(255,255,255,0.7); margin-bottom: 8px; }
+    #legend-gradient { height: 10px; border-radius: 4px; margin-bottom: 6px; }
+    #legend-labels { display: flex; justify-content: space-between; font-size: 11px; color: rgba(255,255,255,0.4); }
+
+    /* Tooltip */
+    #tooltip {
+      position: absolute; pointer-events: none;
+      background: rgba(15,17,23,0.96);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 10px; padding: 14px;
+      font-size: 12px; max-width: 280px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+      display: none; z-index: 200;
+    }
+    #tooltip h3 { font-size: 13px; font-weight: 600; color: #fff; margin-bottom: 10px; line-height: 1.3; }
+    .tt-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; gap: 12px; }
+    .tt-key { color: rgba(255,255,255,0.45); font-size: 11px; }
+    .tt-val { color: #e0e0e0; font-weight: 500; font-size: 12px; }
+    .tt-val.highlight { color: #4f9cf9; font-size: 14px; font-weight: 700; }
+    .tt-divider { border: none; border-top: 1px solid rgba(255,255,255,0.08); margin: 8px 0; }
+    .tt-migration { color: rgba(255,255,255,0.35); font-size: 11px; font-style: italic; margin-top: 6px; }
+
+    /* Loading */
+    #loading {
+      position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+      background: rgba(15,17,23,0.96); border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 12px; padding: 20px 28px; z-index: 300;
+      display: flex; align-items: center; gap: 12px; font-size: 14px;
+    }
+    .spinner {
+      width: 18px; height: 18px;
+      border: 2px solid rgba(79,156,249,0.3);
+      border-top-color: #4f9cf9;
+      border-radius: 50%; animation: spin .7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Click hint */
+    #hint {
+      position: absolute; bottom: 40px; right: 16px;
+      background: rgba(15,17,23,0.8);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 8px; padding: 8px 12px;
+      font-size: 11px; color: rgba(255,255,255,0.35);
+      z-index: 100;
+    }
+  </style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<div id="header">
+  <div id="logo">Demographi<span>Q</span></div>
+  <div id="view-label">National Overview</div>
+  <button id="back-btn" onclick="backToNational()">← Back to National</button>
+</div>
+
+<div id="controls">
+  <div class="control-card">
+    <div class="control-label">Metric</div>
+    <select id="metric-select" onchange="onMetricChange()">
+      <option value="median_household_income">Median Household Income</option>
+      <option value="poverty_rate">Poverty Rate</option>
+      <option value="bachelors_plus_rate">Bachelor's+ Rate</option>
+      <option value="renter_rate">Renter Rate</option>
+      <option value="remote_work_rate">Remote Work Rate</option>
+    </select>
+    <div class="metric-description" id="metric-desc">
+      Middle income among all households. Half earn more, half earn less.
+    </div>
+  </div>
+
+  <div class="control-card">
+    <div class="control-label">Year</div>
+    <div id="year-display">2024</div>
+    <input type="range" id="year-slider" min="2012" max="2024" value="2024" step="1" oninput="onYearChange(this.value)">
+    <div class="year-range"><span>2012</span><span>2024</span></div>
+  </div>
+
+  <div class="control-card">
+    <div class="toggle-row">
+      <span class="toggle-label">Migration Flows</span>
+      <div class="toggle" id="migration-toggle" onclick="toggleMigration()"></div>
+    </div>
+    <div id="migration-note">Shows top state-to-state migration arcs</div>
+  </div>
+</div>
+
+<div id="legend">
+  <div id="legend-title">Median Household Income</div>
+  <div id="legend-gradient" style="background: linear-gradient(to right, #ffffb2, #fd8d3c, #bd0026)"></div>
+  <div id="legend-labels">
+    <span id="legend-min">$0</span>
+    <span id="legend-max">$200k+</span>
+  </div>
+</div>
+
+<div id="hint">Click a state to explore counties →</div>
+<div id="tooltip"></div>
+<div id="loading" style="display:none"><div class="spinner"></div><span id="loading-text">Loading...</span></div>
+
+<script>
+// --- State ---
+let currentView = 'national';
+let currentStateFips = null;
+let currentStateName = 'National Overview';
+let currentYear = 2024;
+let currentMetric = 'median_household_income';
+let showMigration = false;
+let deckOverlay = null;
+let isLoading = false;
+let pendingRender = null;
+
+const METRIC_META = {
+  median_household_income: { label: 'Median Household Income', desc: 'Middle income among all households. Half earn more, half earn less.', format: 'currency' },
+  poverty_rate: { label: 'Poverty Rate', desc: '% of population living below the federal poverty line.', format: 'percent' },
+  bachelors_plus_rate: { label: "Bachelor's+ Rate", desc: "% of adults 25+ with a bachelor's degree or higher.", format: 'percent' },
+  renter_rate: { label: 'Renter Rate', desc: '% of occupied housing units that are renter-occupied.', format: 'percent' },
+  remote_work_rate: { label: 'Remote Work Rate', desc: '% of workers who worked from home in the past week.', format: 'percent' },
+};
+
+// --- Helpers ---
+function fmt(val, format) {
+  if (val == null) return 'N/A';
+  if (format === 'currency') return '$' + Math.round(val).toLocaleString();
+  if (format === 'percent') return parseFloat(val).toFixed(1) + '%';
+  return val.toLocaleString();
+}
+
+function showLoading(text) {
+  document.getElementById('loading').style.display = 'flex';
+  document.getElementById('loading-text').textContent = text || 'Loading...';
+}
+function hideLoading() {
+  document.getElementById('loading').style.display = 'none';
+}
+
+async function fetchJSON(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+// --- Map init ---
+const map = new maplibregl.Map({
+  container: 'map',
+  style: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
+  center: [-96, 38],
+  zoom: 4,
+});
+
+map.addControl(new maplibregl.NavigationControl(), 'bottom-right');
+
+const tooltip = document.getElementById('tooltip');
+
+function showTooltip(x, y, html) {
+  tooltip.style.display = 'block';
+  tooltip.innerHTML = html;
+  const tw = tooltip.offsetWidth, th = tooltip.offsetHeight;
+  const wx = window.innerWidth, wy = window.innerHeight;
+  tooltip.style.left = (x + 16 + tw > wx ? x - tw - 16 : x + 16) + 'px';
+  tooltip.style.top = (y + 16 + th > wy ? y - th - 16 : y + 16) + 'px';
+}
+function hideTooltip() { tooltip.style.display = 'none'; }
+
+function buildTooltip(props, isMigration) {
+  if (isMigration) {
+    return `
+      <h3>${props.origin_state_name} → ${props.dest_state_name}</h3>
+      <div class="tt-row"><span class="tt-key">Households moving</span><span class="tt-val highlight">${(props.households||0).toLocaleString()}</span></div>
+      <div class="tt-row"><span class="tt-key">Individuals</span><span class="tt-val">${(props.individuals||0).toLocaleString()}</span></div>
+      <div class="tt-row"><span class="tt-key">Avg AGI per household</span><span class="tt-val">$${Math.round(props.agi_per_household||0).toLocaleString()}</span></div>
+      <hr class="tt-divider">
+      <div class="tt-row"><span class="tt-key">Origin median income</span><span class="tt-val">$${(props.origin_median_income||0).toLocaleString()}</span></div>
+      <div class="tt-row"><span class="tt-key">Dest median income</span><span class="tt-val">$${(props.dest_median_income||0).toLocaleString()}</span></div>
+      <div class="tt-row"><span class="tt-key">Income differential</span><span class="tt-val">${props.income_differential > 0 ? '+' : ''}$${(props.income_differential||0).toLocaleString()}</span></div>
+    `;
+  }
+  const meta = METRIC_META[currentMetric];
+  return `
+    <h3>${props.geography_name}</h3>
+    <div class="tt-row"><span class="tt-key">${meta.label}</span><span class="tt-val highlight">${fmt(props[currentMetric], meta.format)}</span></div>
+    <hr class="tt-divider">
+    <div class="tt-row"><span class="tt-key">Population</span><span class="tt-val">${(props.total_population||0).toLocaleString()}</span></div>
+    <div class="tt-row"><span class="tt-key">Poverty Rate</span><span class="tt-val">${fmt(props.poverty_rate, 'percent')}</span></div>
+    <div class="tt-row"><span class="tt-key">Bachelor's+</span><span class="tt-val">${fmt(props.bachelors_plus_rate, 'percent')}</span></div>
+    <div class="tt-row"><span class="tt-key">Renter Rate</span><span class="tt-val">${fmt(props.renter_rate, 'percent')}</span></div>
+    <div class="tt-row"><span class="tt-key">Remote Work</span><span class="tt-val">${fmt(props.remote_work_rate, 'percent')}</span></div>
+    <div class="tt-row"><span class="tt-key">Median Home Value</span><span class="tt-val">${fmt(props.median_home_value, 'currency')}</span></div>
+    ${currentView === 'national' ? '<div class="tt-migration">Click to explore counties →</div>' : ''}
+  `;
+}
+
+// --- Legend ---
+const GRADIENTS = {
+  median_household_income: 'linear-gradient(to right, #ffffb2, #fd8d3c, #bd0026)',
+  poverty_rate: 'linear-gradient(to right, #ffffb2, #fd8d3c, #bd0026)',
+  bachelors_plus_rate: 'linear-gradient(to right, #ffffd9, #41b6c4, #081d58)',
+  renter_rate: 'linear-gradient(to right, #f7f4f9, #ce1256, #67001f)',
+  remote_work_rate: 'linear-gradient(to right, #f7fcfd, #8c96c6, #4d004b)',
+};
+
+function updateLegend(meta) {
+  document.getElementById('legend-title').textContent = METRIC_META[currentMetric].label;
+  document.getElementById('legend-gradient').style.background = GRADIENTS[currentMetric];
+  const fmtType = METRIC_META[currentMetric].format;
+  document.getElementById('legend-min').textContent = fmt(meta.min, fmtType);
+  document.getElementById('legend-max').textContent = fmt(meta.max, fmtType) + '+';
+}
+
+// --- Core render function ---
+async function render() {
+  if (isLoading) {
+    pendingRender = true;
+    return;
+  }
+  isLoading = true;
+  pendingRender = false;
+  hideTooltip();
+
+  try {
+    if (currentView === 'national') {
+      await renderNational();
+    } else {
+      await renderCounty();
+    }
+  } catch (error) {
+    console.error("Data Pipeline Error:", error);
+    document.getElementById('loading-text').textContent = "Data failed to load. Check console.";
+    // Keep the loading screen visible so you know it failed, rather than showing a blank map
+  } finally {
+    isLoading = false;
+    if (pendingRender) render();
+  }
+}
+
+async function renderNational() {
+  showLoading('Loading national data...');
+  try {
+    const migYear = Math.min(currentYear, 2023);
+    const promises = [
+      fetchJSON(`/api/states?year=${currentYear}&metric=${currentMetric}`)
+    ];
+    if (showMigration) {
+      promises.push(fetchJSON(`/api/migration?year=${migYear}&min_households=3000`));
+    }
+    const results = await Promise.all(promises);
+    const data = results[0];
+    const migData = results[1] || null;
+
+    updateLegend(data.meta);
+
+    const layers = [
+      new deck.GeoJsonLayer({
+        id: `states-${currentMetric}-${currentYear}-${Date.now()}`,
+        data: data,
+        filled: true,
+        stroked: true,
+        getFillColor: f => f.properties.fill_color || [100, 100, 100, 180],
+        getLineColor: [255, 255, 255, 40],
+        getLineWidth: 1,
+        lineWidthMinPixels: 0.5,
+        pickable: true,
+        autoHighlight: true,
+        highlightColor: [255, 255, 255, 60],
+        onClick: ({ object }) => {
+          if (object && !isLoading) {
+            currentView = 'county';
+            currentStateFips = object.properties.state_fips;
+            currentStateName = object.properties.geography_name;
+            render();
+          }
+        },
+        onHover: ({ object, x, y }) => {
+          if (object) showTooltip(x, y, buildTooltip(object.properties, false));
+          else hideTooltip();
+        },
+      })
+    ];
+
+    if (showMigration && migData && migData.flows.length > 0) {
+      const maxHH = Math.max(...migData.flows.map(f => f.households));
+      layers.push(new deck.ArcLayer({
+        id: `migration-national-${currentYear}-${Date.now()}`,
+        data: migData.flows,
+        getSourcePosition: f => [f.origin_lon, f.origin_lat],
+        getTargetPosition: f => [f.dest_lon, f.dest_lat],
+        getSourceColor: [79, 156, 249, 180],
+        getTargetColor: [249, 115, 79, 180],
+        getWidth: f => Math.max(1, (f.households / maxHH) * 8),
+        pickable: true,
+        onHover: ({ object, x, y }) => {
+          if (object) showTooltip(x, y, buildTooltip(object, true));
+          else hideTooltip();
+        },
+      }));
+    }
+
+    deckOverlay.setProps({ layers });
+    document.getElementById('view-label').textContent = 'National Overview';
+    document.getElementById('hint').textContent = 'Click a state to explore counties →';
+    document.getElementById('hint').style.display = 'block';
+    document.getElementById('back-btn').style.display = 'none';
+
+  } finally {
+    hideLoading();
+  }
+}
+
+async function renderCounty() {
+  showLoading(`Loading ${currentStateName} counties...`);
+  try {
+    // Force string conversion and pad to 2 digits to neutralize JS type coercion
+    const safeFips = String(currentStateFips).padStart(2, '0');
+    
+    const migYear = Math.min(currentYear, 2023);
+    const promises = [
+      fetchJSON(`/api/counties?state_fips=${safeFips}&year=${currentYear}&metric=${currentMetric}`)
+    ];
+    
+    if (showMigration) {
+      promises.push(fetchJSON(`/api/migration?year=${migYear}&state_fips=${safeFips}&min_households=500`));
+    }
+    
+    const results = await Promise.all(promises);
+    const data = results[0];
+    const migData = results[1] || null;
+
+    updateLegend(data.meta);
+
+    // Zoom to state bounds safely
+    const coords = data.features.flatMap(f => {
+      if (!f.geometry) return [];
+      const g = f.geometry;
+      return g.type === 'Polygon' ? g.coordinates[0] : g.coordinates.flat(2);
+    });
+
+    if (coords.length > 0) {
+      let minLon = Infinity, minLat = Infinity, maxLon = -Infinity, maxLat = -Infinity;
+      
+      // Calculate bounds without exceeding the call stack
+      for (let i = 0; i < coords.length; i++) {
+        const lon = coords[i][0];
+        const lat = coords[i][1];
+        if (lon < minLon) minLon = lon;
+        if (lat < minLat) minLat = lat;
+        if (lon > maxLon) maxLon = lon;
+        if (lat > maxLat) maxLat = lat;
+      }
+      
+      map.fitBounds(
+        [[minLon, minLat], [maxLon, maxLat]],
+        { padding: 60, duration: 800 }
+      );
+    }
+
+    const layers = [
+      new deck.GeoJsonLayer({
+        id: `counties-${safeFips}-${currentMetric}-${currentYear}-${Date.now()}`,
+        data: data,
+        filled: true,
+        stroked: true,
+        getFillColor: f => f.properties.fill_color || [100, 100, 100, 180],
+        getLineColor: [255, 255, 255, 60],
+        getLineWidth: 500,
+        lineWidthMinPixels: 0.5,
+        pickable: true,
+        autoHighlight: true,
+        highlightColor: [255, 255, 255, 80],
+        onHover: ({ object, x, y }) => {
+          if (object) showTooltip(x, y, buildTooltip(object.properties, false));
+          else hideTooltip();
+        },
+      })
+    ];
+
+    if (showMigration && migData && migData.flows.length > 0) {
+      const maxHH = Math.max(...migData.flows.map(f => f.households));
+      layers.push(new deck.ArcLayer({
+        id: `migration-county-${safeFips}-${currentYear}-${Date.now()}`,
+        data: migData.flows,
+        getSourcePosition: f => [f.origin_lon, f.origin_lat],
+        getTargetPosition: f => [f.dest_lon, f.dest_lat],
+        getSourceColor: [79, 156, 249, 200],
+        getTargetColor: [249, 115, 79, 200],
+        getWidth: f => Math.max(1, (f.households / maxHH) * 6),
+        pickable: true,
+        onHover: ({ object, x, y }) => {
+          if (object) showTooltip(x, y, buildTooltip(object, true));
+          else hideTooltip();
+        },
+      }));
+    }
+
+    deckOverlay.setProps({ layers });
+    document.getElementById('view-label').textContent = currentStateName;
+    document.getElementById('hint').style.display = 'none';
+    document.getElementById('back-btn').style.display = 'flex';
+
+  } catch (error) {
+    console.error("Data Pipeline Error:", error);
+    document.getElementById('loading-text').textContent = "Data failed to load. Check console.";
+  } finally {
+    hideLoading();
+  }
+}
+
+function backToNational() {
+  currentView = 'national';
+  currentStateFips = null;
+  currentStateName = 'National Overview';
+  map.flyTo({ center: [-96, 38], zoom: 4, duration: 800 });
+  render();
+}
+
+// --- Controls ---
+function onMetricChange() {
+  currentMetric = document.getElementById('metric-select').value;
+  document.getElementById('metric-desc').textContent = METRIC_META[currentMetric].desc;
+  render();
+}
+
+let yearTimeout;
+function onYearChange(val) {
+  currentYear = parseInt(val);
+  document.getElementById('year-display').textContent = val;
+  clearTimeout(yearTimeout);
+  yearTimeout = setTimeout(() => render(), 500);
+}
+
+function toggleMigration() {
+  showMigration = !showMigration;
+  document.getElementById('migration-toggle').classList.toggle('on', showMigration);
+  render();
+}
+
+// --- Boot ---
+map.on('load', () => {
+  deckOverlay = new deck.MapboxOverlay({ interleaved: true, layers: [] });
+  map.addControl(deckOverlay);
+  render();
+});
+</script>
+</body>
+</html>

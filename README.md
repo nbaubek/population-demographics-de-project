@@ -1,17 +1,25 @@
-# DemographIQ
+# DemographIQ - Socioeconomic Atlas
+
+![img](images/logo.png)
 
 A data engineering platform for analyzing U.S. socioeconomic patterns across geographies and time.
 
-Built on a modern data lakehouse architecture (Bronze → Silver → Gold), DemographIQ ingests, 
-transforms, and models Census ACS, TIGER/Line, and IRS migration data to uncover demographic 
+Built on a modern **data lakehouse architecture** (*Bronze → Silver → Gold*), **DemographIQ** ingests, 
+transforms, and models **Census ACS**, **TIGER/Line**, and **IRS migration** data to uncover demographic 
 trends, economic mobility, and population movement across states, counties, and census tracts 
-from 2012 to 2024.
+**from 2012 to 2024**.
+
+This is what the platform looks like:
+![img](images/national-overview.png)
+![img](images/state-migrations.png)
+
+
 
 ---
 
 ## Data Sources
 
-1. [**Census Data**](https://www.census.gov/programs-surveys/popest/data.html). More about the ACS [here](https://www.census.gov/programs-surveys/acs.html) and [here](https://en.wikipedia.org/wiki/American_Community_Survey). The data of interest for us is **American Community Survey 5-Year Data (2009-2024)**. That is the backbone of this project. The ACS is an ongoing annual survey conducted by the U.S. Census Bureau. It provides a multidimensional snapshot of the U.S. population's demographic, social, economic, and housing characteristics — enabling analysis of how these factors interrelate across individuals, households, and geographies.
+1. [**ACS Census Data**](https://www.census.gov/programs-surveys/popest/data.html). More about the ACS [here](https://www.census.gov/programs-surveys/acs.html) and [here](https://en.wikipedia.org/wiki/American_Community_Survey). The data of interest for us is **American Community Survey 5-Year Data (2009-2024)**. That is the backbone of this project. The ACS is an ongoing annual survey conducted by the U.S. Census Bureau. It provides a multidimensional snapshot of the U.S. population's demographic, social, economic, and housing characteristics — enabling analysis of how these factors interrelate across individuals, households, and geographies.
 
 It captures five interconnected dimensions:
 
@@ -36,26 +44,21 @@ Each geography level includes the FIPS code as a column (e.g. "state": "01" for 
     - Since this API allows to query by geographic entities, here's the [hierarchy](https://www2.census.gov/geo/pdfs/reference/geodiagram.pdf) of how those entities relate to each other.
 
 2. [**IRS SOI Tax Stats - Migration data**](https://www.irs.gov/pub/irs-soi/1213inpublicmigdoc.pdf)
-3. [**BLS LAUS**](https://www.bls.gov/lau/data.htm)
-4. **TIGER/Line GIS Data** — Topologically Integrated Geographic Encoding and Referencing system. Provides geographic boundary files (states, counties, census tracts) used for spatial joins and visualization. See [GIS Geography explainer](https://gisgeography.com/tiger-gis-data-topologically-integrated-geographic-encoding-referencing/).
+3. **TIGER/Line GIS Data** — Topologically Integrated Geographic Encoding and Referencing system. Provides geographic boundary files (states, counties, census tracts) used for spatial joins and visualization. See [GIS Geography explainer](https://gisgeography.com/tiger-gis-data-topologically-integrated-geographic-encoding-referencing/).
 
-Another data source from IRS called "SOI tax stats - Personal wealth statistics" is good for future analysis enrichment possibility.
-
-Once the core platform is working, IRS wealth data could become a gold node (as part of a knowledge graph) attribute answering:
-
-> "Does high median income in a county correlate with high asset wealth, or are they decoupled?"
+Other data sources such as "IRS SOI tax stats - Personal wealth statistics" and "3. [**BLS LAUS**](https://www.bls.gov/lau/data.htm)" are excellent for future analysis enrichment.
 
 ---
 
 **API access**
 
-- Census Data apparently requires API key registration starting May 12th, 2026. You can get it [here](https://api.census.gov/data/key_signup.html)
+- All Census Data datasets require API key registration starting May 12th, 2026. You can get it [here](https://api.census.gov/data/key_signup.html)
 
 ---
 
 ## What makes this project interesting
 
-The idea is to build a system that models *population characteristics* across geography and time. On top of that, I intended to build a data platform.
+The idea is to build a system that models *population characteristics* across geography and time. On top of that, I intended to build a data platform that may imitate what can be used long-term in production environments.
 
 **What is Data Platform?**
 
@@ -67,10 +70,10 @@ At a high level:
 
 **What challenges does this project present?**
 
-1. 3 APIs one of which serves as the backbone, the other 2 are for enrichment.
-2. graph model, dashboard, kepler.gl, etc.
+1. 3 APIs, 1 of which serves as the backbone and the other 2 are for enrichment. The challenge is to achieve a coherent combination of them.
+2. Create a map dashboard with a year range slider, 5 metrics, population insights like medium household income, poverty rates etc. at a state, county, and census tract level.
 
-[Kepler GL](https://kepler.gl/)
+[**lonboard**](https://developmentseed.org/lonboard/latest/)
 
 ---
 
@@ -78,14 +81,11 @@ At a high level:
 
 **What I'm trying to achieve**
 
-The answer I'm trying to provide is:
 > "Understanding how demographic and economic conditions evolve spatially and relationally across regions."
 
 ---
 
 ## Overview of the Project in Stages
-
-This project uses 
 
 **Stack:** Dagster (orchestration) + AWS S3/Glue/Athena (storage/query)
 
@@ -225,7 +225,7 @@ s3://population-demographics-iceberg/
 
 ### Stage 4: Analytics & Visualization
 
-- **Tools:** Kepler.gl (spatial visualization), BI dashboards
+- **Tools:** lonboard (spatial visualization)
 - **Focus:** Spatiotemporal patterns of demographic change
 
 ---
@@ -367,6 +367,10 @@ Every `MaterializeResult` captures:
 - `duration_seconds` — wall-clock time
 - `year` and `geography` / `state` where applicable
 
+### Dagster Testing
+
+
+
 ---
 
 ## Data Modeling
@@ -494,6 +498,32 @@ population-demographics-pipeline/
         ├── config.toml         # S3 bucket URL, parquet format
         └── secrets.toml        # Census API key (gitignored)
 ```
+
+### Virtual Environments
+
+This project has **two separate virtual environments** that must not be mixed:
+
+| Location | Purpose | Activation |
+|----------|---------|------------|
+| `.venv/` (root) | Root project tools, DuckDB dashboard | `source .venv/bin/activate` |
+| `dagster-orch/.venv/` | Dagster orchestration, dbt, AWS tools | `cd dagster-orch && source .venv/bin/activate` |
+
+**Important:** Always activate the correct venv before running commands in that environment:
+
+```bash
+# For dashboard/duckdb_creation.py
+cd /path/to/population-demographics-pipeline
+source .venv/bin/activate
+uv run python dashboard/duckdb_creation.py
+
+# For dagster or dbt commands
+cd /path/to/population-demographics-pipeline/dagster-orch
+source .venv/bin/activate
+uv run dg dev
+uv run dbt run --select mart_socioeconomic_states
+```
+
+Running commands in the wrong venv will result in `ModuleNotFoundError` or version conflicts.
 
 ---
 

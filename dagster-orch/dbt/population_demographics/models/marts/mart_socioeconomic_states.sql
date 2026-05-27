@@ -48,6 +48,10 @@ SELECT
     -- Geometry
     geometry_wkt,
     ALAND,
-    AWATER
+    AWATER,
+
+    -- Centroids (derived from geometry)
+    ST_Y(ST_Centroid(ST_GeometryFromText(geometry_wkt))) AS centroid_lat,
+    ST_X(ST_Centroid(ST_GeometryFromText(geometry_wkt))) AS centroid_lon
 
 FROM {{ ref('stg_acs_states') }}

@@ -14,12 +14,20 @@ SELECT
     origin.poverty_rate                             AS origin_poverty_rate,
     origin.remote_work_rate                         AS origin_remote_work_rate,
 
+    -- Origin centroid
+    origin.centroid_lat AS origin_lat,
+    origin.centroid_lon AS origin_lon,
+
     -- Destination context
     dest.geography_name                             AS dest_state_name,
     dest.total_population                           AS dest_total_population,
     dest.median_household_income                    AS dest_median_income,
     dest.poverty_rate                               AS dest_poverty_rate,
     dest.remote_work_rate                           AS dest_remote_work_rate,
+
+    -- Destination centroid  
+    dest.centroid_lat AS dest_lat,
+    dest.centroid_lon AS dest_lon,
 
     -- Income differential
     dest.median_household_income - origin.median_household_income
