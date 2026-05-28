@@ -36,6 +36,7 @@ def _build_silver_acs5_asset(geography: str):
         group_name="silver_acs5",
         deps=[f"bronze_acs5_{geography}"],
         required_resource_keys={"athena"},
+        auto_materialize_policy=dg.AutoMaterializePolicy.eager(),
     )
     def silver_asset(context: dg.AssetExecutionContext) -> dg.MaterializeResult:
         athena = context.resources.athena

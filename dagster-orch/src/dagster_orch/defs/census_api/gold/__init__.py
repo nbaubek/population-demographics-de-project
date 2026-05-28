@@ -18,13 +18,10 @@ from dagster_orch.defs.census_api.gold.census import (
     check_gold_states_ca_population,
 )
 
-from dagster_orch.defs.census_api.gold.jobs import gold_job
-
 __all__ = [
     "gold_states",
     "gold_counties",
     "gold_tracts",
-    "gold_job",
     # Census checks
     "check_gold_states_row_count",
     "check_gold_counties_row_count",

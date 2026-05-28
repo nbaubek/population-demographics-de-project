@@ -90,6 +90,7 @@ def _get_api_key() -> str:
     name="bronze_acs5_states",
     partitions_def=YEAR_PARTITIONS,
     group_name="bronze_acs5",
+    auto_materialize_policy=dg.AutoMaterializePolicy.eager(),
 )
 def bronze_acs5_states(context: dg.AssetExecutionContext) -> dg.MaterializeResult:
     """Ingest ACS 5-year data for all US states."""
@@ -121,6 +122,7 @@ def bronze_acs5_states(context: dg.AssetExecutionContext) -> dg.MaterializeResul
     name="bronze_acs5_counties",
     partitions_def=YEAR_PARTITIONS,
     group_name="bronze_acs5",
+    auto_materialize_policy=dg.AutoMaterializePolicy.eager(),
 )
 def bronze_acs5_counties(context: dg.AssetExecutionContext) -> dg.MaterializeResult:
     """Ingest ACS 5-year data for all US counties."""
@@ -153,6 +155,7 @@ def bronze_acs5_counties(context: dg.AssetExecutionContext) -> dg.MaterializeRes
     name="bronze_acs5_tracts",
     partitions_def=TRACT_PARTITIONS,
     group_name="bronze_acs5",
+    auto_materialize_policy=dg.AutoMaterializePolicy.eager(),
 )
 def bronze_acs5_tracts(context: dg.AssetExecutionContext) -> dg.MaterializeResult:
     """Ingest ACS 5-year data for all US census tracts.

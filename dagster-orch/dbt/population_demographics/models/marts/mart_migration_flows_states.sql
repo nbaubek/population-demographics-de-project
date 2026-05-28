@@ -2,6 +2,8 @@
     materialized='table',
     table_type='iceberg',
     partitioned_by=['survey_year'],
+    bucket_by=['origin_geography_id'],
+    bucket_count=32,
     s3_data_dir='s3://population-demographics-athena-results/dbt/'
 ) }}
 

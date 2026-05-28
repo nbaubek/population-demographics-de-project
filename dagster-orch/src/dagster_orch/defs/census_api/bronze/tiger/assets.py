@@ -123,6 +123,7 @@ def _prepare_tiger_gdf(gdf, year: int) -> pl.DataFrame:
     name="bronze_tiger_states",
     partitions_def=YEAR_PARTITIONS,
     group_name="bronze_tiger",
+    auto_materialize_policy=dg.AutoMaterializePolicy.eager(),
 )
 def bronze_tiger_states(context: dg.AssetExecutionContext) -> dg.MaterializeResult:
     """Download TIGER state boundaries for the given year."""
@@ -153,6 +154,7 @@ def bronze_tiger_states(context: dg.AssetExecutionContext) -> dg.MaterializeResu
     name="bronze_tiger_counties",
     partitions_def=YEAR_PARTITIONS,
     group_name="bronze_tiger",
+    auto_materialize_policy=dg.AutoMaterializePolicy.eager(),
 )
 def bronze_tiger_counties(context: dg.AssetExecutionContext) -> dg.MaterializeResult:
     """Download TIGER county boundaries for the given year."""
@@ -183,6 +185,7 @@ def bronze_tiger_counties(context: dg.AssetExecutionContext) -> dg.MaterializeRe
     name="bronze_tiger_tracts",
     partitions_def=TRACT_PARTITIONS,
     group_name="bronze_tiger",
+    auto_materialize_policy=dg.AutoMaterializePolicy.eager(),
 )
 def bronze_tiger_tracts(context: dg.AssetExecutionContext) -> dg.MaterializeResult:
     """Download TIGER census tract boundaries for all US states.

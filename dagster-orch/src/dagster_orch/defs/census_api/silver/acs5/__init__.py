@@ -4,8 +4,6 @@ from dagster_orch.defs.census_api.silver.acs5.assets import (
     silver_acs5_counties,
     silver_acs5_tracts,
 )
-from dagster_orch.defs.census_api.silver.acs5.jobs import silver_acs5_job
-from dagster_orch.defs.census_api.silver.acs5.schedules import silver_acs5_schedule
 
 # Asset checks
 from dagster_orch.defs.census_api.silver.acs5.checks import (
@@ -27,8 +25,6 @@ __all__ = [
     "silver_acs5_states",
     "silver_acs5_counties",
     "silver_acs5_tracts",
-    "silver_acs5_job",
-    "silver_acs5_schedule",
     # Checks
     "check_silver_acs5_states_row_count",
     "check_silver_acs5_counties_row_count",

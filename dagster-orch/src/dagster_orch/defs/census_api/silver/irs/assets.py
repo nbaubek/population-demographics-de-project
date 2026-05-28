@@ -10,14 +10,14 @@ import time as time_module
 
 import dagster as dg
 
+from dagster_orch.defs.census_api.shared.constants import YEAR_PARTITIONS
+
 SILVER_DB = "population_demographics_silver"
 
 SILVER_LOCATIONS = {
     "state_outflows": "s3://population-demographics-iceberg/silver/irs/migration/state_outflows",
     "county_outflows": "s3://population-demographics-iceberg/silver/irs/migration/county_outflows",
 }
-
-IRS_YEAR_PARTITIONS = dg.StaticPartitionsDefinition([str(y) for y in range(2012, 2024)])
 
 
 def _build_silver_irs_asset(geography: str):
@@ -27,10 +27,11 @@ def _build_silver_irs_asset(geography: str):
 
     @dg.asset(
         name=f"silver_irs_{geography}",
-        partitions_def=IRS_YEAR_PARTITIONS,
+        partitions_def=YEAR_PARTITIONS,
         group_name="silver_irs",
         deps=[f"bronze_irs_{geography}"],
         required_resource_keys={"athena"},
+        auto_materialize_policy=dg.AutoMaterializePolicy.eager(),
     )
     def silver_asset(context: dg.AssetExecutionContext) -> dg.MaterializeResult:
         athena = context.resources.athena

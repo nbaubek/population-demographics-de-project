@@ -24,16 +24,14 @@ from tenacity import (
     before_sleep_log,
 )
 
+from dagster_orch.defs.census_api.shared.constants import YEAR_PARTITIONS
+
 BRONZE_BUCKET = "s3://population-demographics-iceberg/bronze"
 
 # IRS state migration data available from 2011-2012 through 2022-2023
 # County migration data available from 2011-2012 through 2022-2023
 # Use the second year as partition (e.g., 1112.csv → year=2012)
-IRS_STATE_YEARS = list(range(2012, 2024))   # 2012, 2013, ..., 2023
-IRS_COUNTY_YEARS = list(range(2012, 2024))  # 2012, 2013, ..., 2023
-
-IRS_STATE_PARTITIONS = dg.StaticPartitionsDefinition([str(y) for y in IRS_STATE_YEARS])
-IRS_COUNTY_PARTITIONS = dg.StaticPartitionsDefinition([str(y) for y in IRS_COUNTY_YEARS])
+IRS_YEAR_RANGE = range(2012, 2024)  # 2012, 2013, ..., 2023
 
 
 @retry(
@@ -65,8 +63,9 @@ def _irs_county_url(year: int) -> str:
 
 @dg.asset(
     name="bronze_irs_state_outflows",
-    partitions_def=IRS_STATE_PARTITIONS,
+    partitions_def=YEAR_PARTITIONS,
     group_name="bronze_irs",
+    auto_materialize_policy=dg.AutoMaterializePolicy.eager(),
 )
 def bronze_irs_state_outflows(context: dg.AssetExecutionContext) -> dg.MaterializeResult:
     """Download IRS state-to-state migration outflows and write to S3 as parquet.
@@ -119,8 +118,9 @@ def bronze_irs_state_outflows(context: dg.AssetExecutionContext) -> dg.Materiali
 
 @dg.asset(
     name="bronze_irs_county_outflows",
-    partitions_def=IRS_COUNTY_PARTITIONS,
+    partitions_def=YEAR_PARTITIONS,
     group_name="bronze_irs",
+    auto_materialize_policy=dg.AutoMaterializePolicy.eager(),
 )
 def bronze_irs_county_outflows(context: dg.AssetExecutionContext) -> dg.MaterializeResult:
     """Download IRS county-to-county migration outflows and write to S3 as parquet.

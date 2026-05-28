@@ -4,7 +4,10 @@ import dagster as dg
 
 # Year partitions: ACS 5-year data available from 2012 onwards
 # Note: Education table (B15003) with modern codes starts at 2012
-YEAR_PARTITIONS = dg.StaticPartitionsDefinition([str(y) for y in range(2012, 2025)])
+# Use DynamicPartitionsDefinition so new years can be added via API/UI without code changes.
+# After adding a new year to this partition (via Dagster UI or instance.add_dynamic_partitions),
+# run a backfill for that year across all data sources to ingest the new data.
+YEAR_PARTITIONS = dg.DynamicPartitionsDefinition(name="year")
 
 # All 50 US states + DC (FIPS codes as zero-padded strings)
 STATE_FIPS_CODES = [
@@ -17,7 +20,9 @@ STATE_FIPS_CODES = [
 
 STATE_PARTITIONS = dg.StaticPartitionsDefinition(STATE_FIPS_CODES)
 
-# Multi-partition definition for tracts (year x state)
+# Multi-partition definition for tracts (year x state).
+# year dimension is dynamic (can be added without code changes).
+# state dimension is static (FIPS codes don't change year-to-year).
 TRACT_PARTITIONS = dg.MultiPartitionsDefinition({
     "year": YEAR_PARTITIONS,
     "state": STATE_PARTITIONS,

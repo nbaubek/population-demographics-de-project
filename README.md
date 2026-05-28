@@ -1,34 +1,45 @@
 # DemographIQ - Socioeconomic Atlas
 
 ![img](images/logo.png)
+![img](images/demographiq-banner.png)
 
 A data engineering platform for analyzing U.S. socioeconomic patterns across geographies and time.
 
-Built on a modern **data lakehouse architecture** (with medaillion layers: *Bronze → Silver → Gold*), **DemographIQ** ingests, 
-transforms, and models **Census ACS**, **TIGER/Line**, and **IRS migration** data to uncover demographic 
-trends, economic mobility, and population movement across states, counties, and census tracts 
+Built on a modern **data lakehouse architecture** (with medaillion layers: *Bronze → Silver → Gold*), **DemographIQ** ingests,
+transforms, and models **Census ACS**, **TIGER/Line**, and **IRS migration** data to uncover demographic
+trends, economic mobility, and population movement across states, counties, and census tracts
 **from 2012 to 2024**.
 
 Little GIF demo of the platform:
+![img](images/dash-1.gif)
+![img](images/dash-2.gif)
 
-![img]('images/')
+**What you can do with it:**
+
+- **Year range slider** — scrub through 2012–2024 to watch how metrics evolve over time
+- **Metric selector** — choose from median household income, poverty rate, bachelor's+ rate, renter rate, remote work rate
+- **Interactive choropleth map** — zoom from national overview → state → county → census tract level
+- **Dynamic legend** — colormap rescales to the 5th–95th percentile of the currently visible geography
+- **Migration flow arcs** — see origin/destination state pairs sized by household volume, colored by income differential
+- **State/county/tract drill-down** — click any geography to zoom in and see finer-grained data for that area
 
 <hr style="height: 3px; background: linear-gradient(to right, #a7aecf, #550aa0); border: none;">
 
 ### **Table of contents**
 
-- [ADR () and tooling](#adr--and-tooling)
+- [ADR (Architecture Decision Record) and tooling](#adr--and-tooling)
+- [How to deploy the project](#how-to-deploy-the-project)
 - [Data Sources](#data-sources)
 - [What makes this project interesting](#what-makes-this-project-interesting)
-- [What story this project uncovers](#what-story-this-project-uncovers)
-- [Overview of the Project in Stages](#overview-of-the-project-in-stages)
+- [Overview of Data Flow in Stages](#overview-of-data-flow-in-stages)
 - [Infrastructure Setup (Terraform)](#infrastructure-setup-terraform)
-- [Data Quality & Observability](#data-quality--observability)
+- [Data Quality & Pipeline Observability (Dagster and dbt)](#data-quality--pipeline-observability-dagster-and-dbt)
+- [Structured Logging with Dagster](#structured-logging-with-dagster)
+- [Pipeline Automation (No Cron Schedules)](#pipeline-automation-no-cron-schedules)
 - [Data Modeling with dbt](#data-modeling-with-dbt)
 - [Project Structure](#project-structure)
 - [Virtual Environments](#virtual-environments)
 - [Potential improvements to make this project closer to "production grade"](#potential-improvements-to-make-this-project-closer-to-production-grade)
-- [Conclusions about the project](#conclusions-about-the-project)
 
 
 <hr style="height: 3px; background: linear-gradient(to right, #a7aecf, #550aa0); border: none;">
@@ -416,11 +427,11 @@ The workgroup is configured with `bytes_scanned_cutoff_per_query = 1073741824` (
 
 <hr style="height: 3px; background: linear-gradient(to right, #a7aecf, #550aa0); border: none;">
 
-## Data Quality & Observability (Dagster and dbt)
+## Data Quality & Pipeline Observability (Dagster and dbt)
 
-Asset Lineage graph in Dagster UI:
+Global Asset Lineage graph in Dagster UI:
 
-![img]('images/assets-graph')
+![img](images/asset-graph.png)
 
 ### Asset Checks in Dagster
 
@@ -493,9 +504,68 @@ Every `MaterializeResult` captures:
 
 <hr style="height: 3px; background: linear-gradient(to right, #a7aecf, #550aa0); border: none;">
 
-## Pipeline Testing with Dagster
+## Pipeline Automation (No Cron Schedules)
 
+This pipeline has **no cron-based schedules**. Instead, all asset runs are triggered automatically by data availability using two Dagster features working together:
 
+### 1. Dynamic Year Partitions
+
+`YEAR_PARTITIONS` is a `dg.DynamicPartitionsDefinition(name="year")` defined in `dagster-orch/src/dagster_orch/defs/census_api/shared/constants.py`. Unlike `StaticPartitionsDefinition` (which locks in partitions at code deploy time), dynamic partitions can be added at runtime via API or UI — no code change needed when a new data year becomes available.
+
+All three data sources (ACS, TIGER, IRS) share the same `YEAR_PARTITIONS` and `TRACT_PARTITIONS` (which combines the dynamic year dimension with a static state dimension for tract-level assets).
+
+### 2. sync_year_partitions Sensor
+
+A sensor (`sync_year_partitions_sensor` in `definitions.py`) runs on the Dagster daemon's evaluation cycle and checks for newly available ACS/IRS years based on release schedules:
+
+- **ACS 5-year estimates** are released in December each year (e.g., 2024 estimates released December 2025). The sensor adds the new year partition automatically once the data is expected to be available.
+- **IRS migration data** lags by ~1 year. The sensor adds partitions conservatively based on the current calendar year.
+
+When new partition keys are added to `YEAR_PARTITIONS`, Dagster automatically detects this and queues materialization runs.
+
+### 3. AutoMaterializePolicy.eager()
+
+All year-partitioned assets have `auto_materialize_policy=dg.AutoMaterializePolicy.eager()`. This means:
+
+- When the sensor adds a new year partition (e.g., `"2025"`), Dagster immediately queues that asset for materialization
+- Because assets declare dependencies (e.g., `silver_acs5_states` depends on `bronze_acs5_states`), the **entire lineage triggers automatically**: bronze → silver → gold in sequence
+- Tract-level assets use `MultiPartitionsDefinition` (year × state), so adding a new year also adds all 51 state partitions for that year (`"2025/01"`, `"2025/02"`, ...), each triggering tract ingestion for that state
+
+### How to Add a New Year
+
+1. The sensor handles this automatically when the ACS/IRS data becomes available per the release calendar
+2. To force-add a new partition immediately (e.g., for testing or early backfill), use the Dagster UI:
+   - Go to **Overview → Partitions → year** → **Add Partitions**
+   - Enter the new year key (e.g., `2025`)
+   - Dagster will immediately start a materialization run for all assets using that partition
+
+### Why No Cron Schedules?
+
+Data sources don't update on a fixed schedule — they release annually on unpredictable dates (ACS in December, IRS in late autumn). Cron schedules would either fire before data is available or require constant adjustment. The sensor + auto-materialize approach means:
+
+- **No missed releases** — the pipeline reacts to data availability, not the calendar
+- **No zombie runs** — nothing happens until a new partition appears
+- **Less operational overhead** — no need to maintain or disable schedules when data is delayed
+
+### Assets with Auto-Materialize Policy
+
+All partitioned assets (bronze, silver, IRS) use `AutoMaterializePolicy.eager()`:
+
+| Asset | Partition | Data Source |
+|-------|-----------|-------------|
+| `bronze_acs5_states` | `YEAR_PARTITIONS` | Census API |
+| `bronze_acs5_counties` | `YEAR_PARTITIONS` | Census API |
+| `bronze_acs5_tracts` | `TRACT_PARTITIONS` (year×state) | Census API |
+| `bronze_tiger_states` | `YEAR_PARTITIONS` | pygris/TIGER |
+| `bronze_tiger_counties` | `YEAR_PARTITIONS` | pygris/TIGER |
+| `bronze_tiger_tracts` | `TRACT_PARTITIONS` (year×state) | pygris/TIGER |
+| `bronze_irs_state_outflows` | `YEAR_PARTITIONS` | IRS SOI |
+| `bronze_irs_county_outflows` | `YEAR_PARTITIONS` | IRS SOI |
+| `silver_acs5_{geo}` | `YEAR_PARTITIONS` | Iceberg INSERT |
+| `silver_tiger_{geo}` | `YEAR_PARTITIONS` | Iceberg INSERT |
+| `silver_irs_{geo}` | `YEAR_PARTITIONS` | Iceberg INSERT |
+
+Gold assets (`gold_states`, `gold_counties`, `gold_tracts`, `gold_irs_*`) are **not year-partitioned** — they hold all years in a single Iceberg table (`PARTITIONED BY (survey_year)` internally). They run via dependency: when their upstream silver assets update, the gold assets pick up the new year data on the next evaluation cycle.
 
 <hr style="height: 3px; background: linear-gradient(to right, #a7aecf, #550aa0); border: none;">
 
@@ -543,6 +613,31 @@ The staging layer uses `sources.yml` to define tests on source tables. All tests
 | `gold_irs_county_outflows` | `survey_year` | `not_null` | Year must always be present |
 
 **Note:** `gold_irs_county_outflows` does not have a `unique_combination_of_columns` test because IRS publishes aggregate destination codes (`y2_countyfips=000` for county totals) that legitimately share the same `(origin, dest, year)` combination. Downstream mart models filter to actual flows via `is_non_migrant = false`.
+
+### Partitioning
+
+All five mart models are partitioned by `survey_year` to align with the underlying Iceberg table partitioning strategy used in the gold layer. This allows Athena to prune partitions at query time when filtering by year, reducing bytes scanned and improving dashboard query performance.
+
+The five partitioned mart models:
+- `mart_socioeconomic_states`
+- `mart_socioeconomic_counties`
+- `mart_socioeconomic_tracts`
+- `mart_migration_flows_states`
+- `mart_migration_flows_counties`
+
+### On Bucketing
+
+Bucketing in Athena Iceberg groups rows by a hash of the bucket key into a fixed number of buckets, enabling direct file lookup for equality filters instead of scanning all data within a partition. It's most effective when data volume within a partition is large and filters are frequent on the bucketing column.
+
+All four socioeconomic/migration mart models use `bucket_count=32`, chosen as a balance between file size (too few buckets → large files) and overhead (too many buckets → many small files).
+
+| Model | Bucket Column | Rationale |
+|-------|--------------|-----------|
+| `mart_socioeconomic_states` | — | No bucketing — only 52 rows per partition, no meaningful I/O reduction |
+| `mart_socioeconomic_counties` | `state_fips` | Dashboard always filters `WHERE state_fips = ?` within a year; bucketing reduces ~3,200 county rows to ~1 bucket (1/52 of partition) |
+| `mart_socioeconomic_tracts` | `state_fips` | Highest impact — 84,000 tract rows per partition; bucketing narrows to ~1,600 rows per state bucket (~98% I/O reduction for state-level queries) |
+| `mart_migration_flows_states` | `origin_geography_id` | Dashboard filters by origin state; bucketing on `origin_geography_id` eliminates scanning non-matching state flows within the partition |
+| `mart_migration_flows_counties` | `origin_state_fips` | Same pattern — county-to-county flows filtered by origin state; bucketing on `origin_state_fips` prunes to relevant bucket |
 
 <hr style="height: 3px; background: linear-gradient(to right, #a7aecf, #550aa0); border: none;">
 
@@ -653,20 +748,34 @@ Running commands in the wrong venv will result in `ModuleNotFoundError` or versi
 
 ## Potential improvements to make this project closer to "production grade"
 
-1. Adding AWS Secrets Manager, i.e. using OpenID Connect (OIDC). for API keys instead of using local credentials. Obviously a better choice because secrets are not log-lived. Also a better choice when CI/CD is used.
-2. Using CI/CD for automating deployment of all resources on cloud.
-3. RBAC for resources and users. Currently all operations are running from IAM user account with root permissions.
-4. Using three-layer VPC configuration. This is if you intend to deploy the entire infrastructure on cloud. Here's how it might look:
-    + Dagster deployment on EC2 instance `t4g.medium` with 2vCPUs and 4GBs of RAM at around $≈0.0336 per hour. 
-    + 
+### Infrastructure & Deployment
 
-Three layer VPC config diagram:
-5. Using dbt cloud (if preferred)
++ **Secrets management** — Replace local `.env` credentials with AWS Secrets Manager + OpenID Connect (OIDC). This eliminates long-lived static keys and integrates cleanly with CI/CD pipelines.
 
++ **CI/CD pipeline** — Automate Terraform and Dagster deployments rather than running apply commands manually from a developer's machine.
 
++ **RBAC** — Current operations run under an IAM user account with broad permissions. Enforce least-privilege access via IAM roles and service accounts.
+
++ **Dagster deployment** — Replace local `dg dev` with a proper deployment on an EC2 instance (e.g., `t4g.medium` at ~$0.03/hr) or a containerized setup behind a load balancer. This removes the dependency on a developer's laptop staying online.
+
++ **dbt Cloud** — An alternative to self-managed dbt Core if a hosted experience with built-in scheduling, IDE, and alerting is preferred.
+
+### Observability
+
+**Data quality**
+
+- **dbt artifacts + Elementary** — recommended. Open-source dbt observability that generates quality dashboards from test results with zero extra pipeline code. Free alternative to Monte Carlo.
+- **Soda** — pipeline-independent data quality scans as an alternative. Useful for validating raw or downstream layers outside the dbt test framework. Works with Athena.
+
+**Pipeline observability**
+
+- **OpenLineage + Marquez** — open-source column-level lineage tracking across Dagster and dbt. Integrates with the existing asset model.
+- **Slack alerting** — alert on asset check failures (not just run failures), so data quality regressions surface immediately.
+
+**Infrastructure observability**
+
+- **AWS CloudWatch** — Athena query cost tracking, S3 access patterns, Lambda monitoring.
+- **AWS Cost Anomaly Detection** — alerts if Athena spend spikes unexpectedly beyond normal patterns.
+- **Terraform drift detection** — detect when actual AWS resources diverge from the Terraform state file.
 
 <hr style="height: 3px; background: linear-gradient(to right, #a7aecf, #550aa0); border: none;">
-
-## Conclusions about the project
-
-Places are interconnected systems, not isolated demographic snapshots.
