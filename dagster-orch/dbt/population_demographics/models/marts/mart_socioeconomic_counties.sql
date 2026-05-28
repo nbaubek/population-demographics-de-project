@@ -1,3 +1,10 @@
+{{ config(
+    materialized='table',
+    external_location='s3://population-demographics-athena-results/dbt/marts/mart_socioeconomic_counties',
+    partitioned_by=['survey_year'],
+    table_type='iceberg'
+) }}
+
 SELECT
     geography_id,
     survey_year,

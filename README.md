@@ -4,20 +4,110 @@
 
 A data engineering platform for analyzing U.S. socioeconomic patterns across geographies and time.
 
-Built on a modern **data lakehouse architecture** (*Bronze → Silver → Gold*), **DemographIQ** ingests, 
+Built on a modern **data lakehouse architecture** (with medaillion layers: *Bronze → Silver → Gold*), **DemographIQ** ingests, 
 transforms, and models **Census ACS**, **TIGER/Line**, and **IRS migration** data to uncover demographic 
 trends, economic mobility, and population movement across states, counties, and census tracts 
 **from 2012 to 2024**.
 
-This is what the platform looks like:
+Little GIF demo of the platform:
+
+
+
+Other :
 ![img](images/national-overview.png)
 ![img](images/state-migrations.png)
 
+What information this platform supports:
++ 
+
+<hr style="height: 3px; background: linear-gradient(to right, #a7aecf, #550aa0); border: none;">
+
+### **Table of contents**
+
+- [ADR () and tooling](#adr--and-tooling)
+- [Data Sources](#data-sources)
+- [What makes this project interesting](#what-makes-this-project-interesting)
+- [What story this project uncovers](#what-story-this-project-uncovers)
+- [Overview of the Project in Stages](#overview-of-the-project-in-stages)
+- [Infrastructure Setup (Terraform)](#infrastructure-setup-terraform)
+- [Data Quality & Observability](#data-quality--observability)
+- [Data Modeling with dbt](#data-modeling-with-dbt)
+- [Project Structure](#project-structure)
+- [Virtual Environments](#virtual-environments)
+- [Potential improvements to make this project closer to "production grade"](#potential-improvements-to-make-this-project-closer-to-production-grade)
+- [Conclusions about the project](#conclusions-about-the-project)
 
 
----
+
+<hr style="height: 3px; background: linear-gradient(to right, #a7aecf, #550aa0); border: none;">
+
+## ADR (Architecture Decision Record) and tooling
+
+### Environment & Package Management
+
+| Tool | Choice | Reasoning |
+|------|--------|-----------|
+| **uv** | Package manager | ~10-100x faster dependency resolution than pip. Single tool for venv + package + lock. |
+
+### Orchestration & Transformation
+
+| Tool | Choice | Reasoning |
+|------|--------|-----------|
+| **Dagster** | Asset orchestrator | Native **asset model** matches data engineering concept of data assets. Built-in lineage, partition-aware backfill, first-class **dbt integration** via `@dbt_assets`. |
+| **dbt** | SQL transformation | Industry standard for analytics engineering. Runs against **Athena** via dbt-athena adapter. Handles medallion modeling (silver → gold), testing, documentation. |
+
+### Cloud Infrastructure (IaC)
+
+| Tool | Choice | Reasoning |
+|------|--------|-----------|
+| **Terraform** | Infrastructure as Code | Declarative, stateful, widely adopted. All AWS resources (S3, Glue, Athena, IAM) codified and version-controlled. |
+| **AWS S3** | Object storage | Foundation of the **data lake**. Stores raw parquet (bronze), Iceberg tables (silver/gold). Integrates natively with Athena. |
+| **AWS Athena** | Query engine | Interactive SQL over S3. Supports **Iceberg table format** (ACID transactions, time-travel). Used for all layer-to-layer transfers (bronze → silver → gold via INSERT INTO ... SELECT). |
+| **AWS Glue Data Catalog** | Metadata catalog | Centralized **Iceberg table metadata** (schemas, partitions, location). Works with Athena as the metastore. |
+
+### Data Processing & Storage
+
+| Tool | Choice | Reasoning |
+|------|--------|-----------|
+| **Polars** | In-memory DataFrame | Fast **CSV → Parquet** conversion in bronze ingestion. Multi-threaded, lazy evaluation, memory-efficient. |
+| **Parquet** | Columnar storage | Native S3 storage for bronze layer. Efficient compression, predicate pushdown for query pruning. |
+| **Apache Iceberg** | Table format | **ACID transactions** on S3. **Partition evolution** (change partition scheme without rewrites). **Time-travel** (query historical versions). |
+
+### Dashboard & Visualization
+
+| Tool | Choice | Reasoning |
+|------|--------|-----------|
+| **Flask** | Web framework | Lightweight, minimal boilerplate. Serves GeoJSON API + HTML template. |
+| **lonboard** | Web map rendering | Built on deck.gl for **GPU-accelerated choropleth maps**. Handles large datasets (73k tracts) via WebGL. |
+| **shapely** | Geometry processing | Converts WKT → GeoJSON on the backend for map rendering. |
+
+### CLI & Development
+
+| Tool | Choice | Reasoning |
+|------|--------|-----------|
+| **justfile** | Command runner | Cleaner than Make — no mandatory tab indentation. Stores project-specific commands (`just dag-start`, `just dbt-build`). Self-documenting. |
+| **mypy** | Static type checker | Catches type errors before runtime. Strict mode for production-grade code. |
+| **ruff** | Linter/formatter | 10-100x faster than flake8/black. Single tool for lint + format. |
+
+<hr style="height: 3px; background: linear-gradient(to right, #a7aecf, #550aa0); border: none;">
+
+
+## How to deploy the project
+
++ 1. You need to clone this repo, and change into its directory. Run `uv sync` in the root directory as well as in `dagster-orch` directory. They have 2 different environments. The root environment is mainly used for testing/exploration and launching the platform (dashboard).
+
++ 2. Install AWS CLI locally. Then get an IAM user account on AWS and run `aws configure` command. When you run this command, it interactively prompts you to enter an AWS Access Key ID and an AWS Secret Access Key that you generated for an IAM user in the AWS Console.
+
++ 3. ACS data source requires an API key (more details in "API access" subsection of "Data Sources" section).
+
++ 4. You need to have Terraform installed on your machine in order to run the cloud infrastructure required for this project.
+
+
+<hr style="height: 3px; background: linear-gradient(to right, #a7aecf, #550aa0); border: none;">
 
 ## Data Sources
+
+There are 3 different data sources at this stage.
 
 1. [**ACS Census Data**](https://www.census.gov/programs-surveys/popest/data.html). More about the ACS [here](https://www.census.gov/programs-surveys/acs.html) and [here](https://en.wikipedia.org/wiki/American_Community_Survey). The data of interest for us is **American Community Survey 5-Year Data (2009-2024)**. That is the backbone of this project. The ACS is an ongoing annual survey conducted by the U.S. Census Bureau. It provides a multidimensional snapshot of the U.S. population's demographic, social, economic, and housing characteristics — enabling analysis of how these factors interrelate across individuals, households, and geographies.
 
@@ -37,28 +127,28 @@ It captures five interconnected dimensions:
 
 Each geography level includes the FIPS code as a column (e.g. "state": "01" for Alabama), which gets preserved after renaming — that's the state column showing up in the output.
 
-    - [API Guide](https://www.census.gov/data/developers/guidance/api-user-guide.Example_API_Queries.html#accordion-24b3247975-item-cc8dcd2152)
-    - [Table IDs explained](https://www.census.gov/programs-surveys/acs/data/data-tables/table-ids-explained.html#accordion-889eff65b1-item-a1554d738d) . Each table is assigned an ID by which its content can be recognized.
-    - [Some more explanations](https://www.youtube.com/watch?v=A2HrsOS8omI) regarding table Table IDs and Variable names
-    - [Search Table IDs and Variables by the code](https://data.census.gov/table/)
-    - Since this API allows to query by geographic entities, here's the [hierarchy](https://www2.census.gov/geo/pdfs/reference/geodiagram.pdf) of how those entities relate to each other.
++ [API Guide](https://www.census.gov/data/developers/guidance/api-user-guide.Example_API_Queries.html#accordion-24b3247975-item-cc8dcd2152)
++ [Table IDs explained](https://www.census.gov/programs-surveys/acs/data/data-tables/table-ids-explained.html#accordion-889eff65b1-item-a1554d738d) . Each table is assigned an ID by which its content can be recognized.
++ [Some more explanations](https://www.youtube.com/watch?v=A2HrsOS8omI) regarding table Table IDs and Variable names
++ [Search Table IDs and Variables by the code](https://data.census.gov/table/)
++ Since this API allows to query by geographic entities, here's the [hierarchy](https://www2.census.gov/geo/pdfs/reference/geodiagram.pdf) of how those entities relate to each other.
 
 2. [**IRS SOI Tax Stats - Migration data**](https://www.irs.gov/pub/irs-soi/1213inpublicmigdoc.pdf)
-3. **TIGER/Line GIS Data** — Topologically Integrated Geographic Encoding and Referencing system. Provides geographic boundary files (states, counties, census tracts) used for spatial joins and visualization. See [GIS Geography explainer](https://gisgeography.com/tiger-gis-data-topologically-integrated-geographic-encoding-referencing/).
+3. **TIGER/Line GIS Data** — Topologically Integrated Geographic Encoding and Referencing system. Provides geographic boundary files (states, counties, census tracts) used for spatial joins and visualization. See [GIS Geography explainer](https://gisgeography.com/tiger-gis-data-topologically-integrated-geographic-encoding-referencing/). This was retrieved using `pygris` Python package.
 
-Other data sources such as "IRS SOI tax stats - Personal wealth statistics" and "3. [**BLS LAUS**](https://www.bls.gov/lau/data.htm)" are excellent for future analysis enrichment.
+Other data sources such as "IRS SOI tax stats - Personal wealth statistics" and "[**BLS LAUS**](https://www.bls.gov/lau/data.htm)" are excellent for future analysis enrichment.
 
----
+<hr style="height: 3px; background: linear-gradient(to right, #a7aecf, #550aa0); border: none;">
 
-**API access**
+### **API access**
 
 - All Census Data datasets require API key registration starting May 12th, 2026. You can get it [here](https://api.census.gov/data/key_signup.html)
 
----
+<hr style="height: 3px; background: linear-gradient(to right, #a7aecf, #550aa0); border: none;">
 
 ## What makes this project interesting
 
-The idea is to build a system that models *population characteristics* across geography and time. On top of that, I intended to build a data platform that may imitate what can be used long-term in production environments.
+The idea was to build a system that models *population characteristics* across geography and time. On top of that, I intended to build a *data platform* that may imitate what can be used long-term in production environments. 
 
 **What is Data Platform?**
 
@@ -73,9 +163,7 @@ At a high level:
 1. 3 APIs, 1 of which serves as the backbone and the other 2 are for enrichment. The challenge is to achieve a coherent combination of them.
 2. Create a map dashboard with a year range slider, 5 metrics, population insights like medium household income, poverty rates etc. at a state, county, and census tract level.
 
-[**lonboard**](https://developmentseed.org/lonboard/latest/)
-
----
+<hr style="height: 3px; background: linear-gradient(to right, #a7aecf, #550aa0); border: none;">
 
 ## What story this project uncovers
 
@@ -83,7 +171,7 @@ At a high level:
 
 > "Understanding how demographic and economic conditions evolve spatially and relationally across regions."
 
----
+<hr style="height: 3px; background: linear-gradient(to right, #a7aecf, #550aa0); border: none;">
 
 ## Overview of the Project in Stages
 
@@ -228,7 +316,7 @@ s3://population-demographics-iceberg/
 - **Tools:** lonboard (spatial visualization)
 - **Focus:** Spatiotemporal patterns of demographic change
 
----
+<hr style="height: 3px; background: linear-gradient(to right, #a7aecf, #550aa0); border: none;">
 
 ## Infrastructure Setup (Terraform)
 
@@ -285,10 +373,10 @@ terraform apply
 ### Bucket Naming Convention
 
 Base name + suffix:
-- `{bucket_name}-iceberg` → raw data bucket. For raw data and Iceberg tables.
-- `{bucket_name}-athena-results` → query results
+- `{bucket_name}-iceberg` → raw data bucket. For raw data (bronze layer) and Iceberg tables (silver and gold layers).
+- `{bucket_name}-athena-results` → Athena query results as well as dbt models
 
-Default base: `population-demographics`
+Default base: `population-demographics`. If you don't override bucket_name in Terraform, every bucket in the project will be prefixed with population-demographics. If you wanted a different prefix (e.g., for a different environment or account), you'd change that single variable and all buckets would rename accordingly.
 
 ### Configuration Variables
 
@@ -301,11 +389,15 @@ Default base: `population-demographics`
 
 The workgroup is configured with `bytes_scanned_cutoff_per_query = 1073741824` (1 GB). Any query scanning more than 1GB of data will fail with a cost guardrail error, preventing runaway scans from accumulating large bills.
 
----
+<hr style="height: 3px; background: linear-gradient(to right, #a7aecf, #550aa0); border: none;">
 
-## Data Quality & Observability
+## Data Quality & Observability (Dagster and dbt)
 
-### Asset Checks
+Asset Lineage graph in Dagster UI:
+
+![img]('images/assets-graph')
+
+### Asset Checks in Dagster
 
 Asset checks run after each materialization to catch data quality issues before they reach downstream layers. Located in `dagster-orch/src/dagster_orch/defs/census_api/{silver,gold}/checks.py`.
 
@@ -329,7 +421,14 @@ Asset checks run after each materialization to catch data quality issues before 
 
 Checks run via the **Asset Details → Checks** tab in the Dagster UI after materializing any partition.
 
-### Structured Logging
+<hr style="height: 3px; background: linear-gradient(to right, #a7aecf, #550aa0); border: none;">
+
+### Data Quality of dbt models
+
+
+<hr style="height: 3px; background: linear-gradient(to right, #a7aecf, #550aa0); border: none;">
+
+## Structured Logging with Dagster
 
 All assets use `context.log` consistently for run-time visibility:
 
@@ -367,144 +466,142 @@ Every `MaterializeResult` captures:
 - `duration_seconds` — wall-clock time
 - `year` and `geography` / `state` where applicable
 
-### Dagster Testing
+<hr style="height: 3px; background: linear-gradient(to right, #a7aecf, #550aa0); border: none;">
+
+## Pipeline Testing with Dagster
 
 
 
----
+<hr style="height: 3px; background: linear-gradient(to right, #a7aecf, #550aa0); border: none;">
 
-## Data Modeling
+## Data Modeling with dbt
 
-### Census ACS 5-Year Estimates (2009-2024)
+dbt is used as a tool for data modeling in this project.
 
-All data comes from the [American Community Survey 5-Year Estimates](https://www.census.gov/programs-surveys/acs/data/data-tables/table-ids-explained.html). ACS is an ongoing survey providing demographic, social, economic, and housing characteristics. The 5-year estimates cover a rolling 5-year window (e.g., 2024 = 2019-2024).
+Models materialization methods:
++ **Staging models as views**
++ **Mart models as tables**
 
-**Note:** Education table B15003 uses modern codes (with aggregate totals, no gender split) from **2012 onwards**. Earlier years (2009-2011) use B15002 with gender split (male/female sections) and different variable codes. All other tables use stable codes across the full 2009-2024 range. 
+The point at which dbt starts being used is the gold layer of Amazon Athena which serves as the source for staging models.
 
-### Census ACS Tables and Variables
+Finished lineage graph in dbt:
 
-#### B01001 — Sex by Age
-*Universe: Total population*
+![img](images/dbt-dag.png)
 
-| Column | Code | Description |
-|--------|------|-------------|
-| `total_population` | B01001_001E | Total population |
-| `median_age` | B01002_001E | Median age |
+All mart models are materialized against Amazon Athena as tables and use Glue Data Catalog for metadata layer. The materialization paths for dbt models are under `'s3://population-demographics-athena-results/dbt/marts/'`. Only marts appear in S3 as parquet files.
 
-#### B03002 — Hispanic or Latino Origin by Race
-*Universe: Total population (excludes Hispanic/Latino origin)*
+Database name for dbt models: "`awsdatacatalog`". To know the exact configurations, see `profiles.yml`, `dbt_project.yml`.
 
-| Column | Code | Description |
-|--------|------|-------------|
-| `white_alone_not_hispanic` | B03002_003E | White alone, not Hispanic or Latino |
-| `black_alone_not_hispanic` | B03002_004E | Black or African American alone, not Hispanic or Latino |
-| `asian_alone_not_hispanic` | B03002_006E | Asian alone, not Hispanic or Latino |
-| `hispanic_or_latino` | B03002_012E | Hispanic or Latino origin |
+### dbt Tests in the Staging Layer
 
-#### B07001 — Geographic Mobility by Sex
-*Universe: Population 1 year and over*
+The staging layer uses `sources.yml` to define tests on source tables. All tests are defined in the `awsdatacatalog.pop Demographics_gold` database:
 
-| Column | Code | Description |
-|--------|------|-------------|
-| `migration_total` | B07001_001E | Total population (used for migration/ mobility metrics) |
+| Table | Column(s) Tested | Test Type | Description |
+|-------|-----------------|-----------|-------------|
+| `gold_states` | `geography_id` | `not_null` | State FIPS must always be present |
+| `gold_states` | `survey_year` | `not_null` | Year must always be present |
+| `gold_states` | `(geography_id, survey_year)` | `unique_combination_of_columns` | One row per state per year |
+| `gold_counties` | `geography_id` | `not_null` | County FIPS must always be present |
+| `gold_counties` | `survey_year` | `not_null` | Year must always be present |
+| `gold_counties` | `(geography_id, survey_year)` | `unique_combination_of_columns` | One row per county per year |
+| `gold_tracts` | `geography_id` | `not_null` | Census tract FIPS must always be present |
+| `gold_tracts` | `survey_year` | `not_null` | Year must always be present |
+| `gold_tracts` | `(geography_id, survey_year)` | `unique_combination_of_columns` | One row per tract per year |
+| `gold_irs_state_outflows` | `origin_geography_id` | `not_null` | Origin state FIPS must always be present |
+| `gold_irs_state_outflows` | `dest_geography_id` | `not_null` | Destination state FIPS must always be present |
+| `gold_irs_state_outflows` | `survey_year` | `not_null` | Year must always be present |
+| `gold_irs_state_outflows` | `(origin_geography_id, dest_geography_id, survey_year)` | `unique_combination_of_columns` | One row per state-to-state flow per year |
+| `gold_irs_county_outflows` | `origin_geography_id` | `not_null` | Origin county FIPS must always be present |
+| `gold_irs_county_outflows` | `dest_geography_id` | `not_null` | Destination county FIPS must always be present |
+| `gold_irs_county_outflows` | `survey_year` | `not_null` | Year must always be present |
 
-#### B08301 — Means of Transportation to Work
-*Universe: Workers 16 years and over*
+**Note:** `gold_irs_county_outflows` does not have a `unique_combination_of_columns` test because IRS publishes aggregate destination codes (`y2_countyfips=000` for county totals) that legitimately share the same `(origin, dest, year)` combination. Downstream mart models filter to actual flows via `is_non_migrant = false`.
 
-| Column | Code | Description |
-|--------|------|-------------|
-| `commute_total_workers_16_plus` | B08301_001E | Total workers 16 years and over |
-| `drove_alone_to_work` | B08301_003E | Car, truck, or van — drove alone |
-| `walked_to_work` | B08301_019E | Walked |
-| `worked_from_home` | B08301_021E | Worked from home |
-
-#### B15003 — Educational Attainment
-*Universe: Population 25 years and over*
-
-| Column | Code | Description |
-|--------|------|-------------|
-| `education_total_25y_plus` | B15003_001E | Total population 25 years and over |
-| `no_high_school_diploma` | B15003_002E | No schooling completed or kindergarten through grade 12 |
-| `high_school_diploma` | B15003_017E | High school graduate, includes equivalency (GED) |
-| `bachelors_degree` | B15003_022E | Bachelor's degree |
-| `masters_degree` | B15003_023E | Master's degree |
-| `professional_degree` | B15003_024E | Professional school degree |
-| `doctorate_degree` | B15003_025E | Doctorate degree |
-
-**Availability:** B15003 with modern codes exists from **2012 onwards**. Earlier years (2009-2011) used B15002 with gender split (male/female sections) and different variable codes. Since we only need aggregate totals, we use B15003 from 2012+ and exclude pre-2012 education data.
-
-#### B17001 — Poverty Status by Sex by Age
-*Universe: Population for whom poverty status is determined*
-
-| Column | Code | Description |
-|--------|------|-------------|
-| `poverty_total` | B17001_001E | Total population (for poverty determination) |
-| `below_poverty_level` | B17001_002E | Income below poverty level |
-
-#### B19013 — Median Household Income
-*Universe: Occupied housing units with household income*
-
-| Column | Code | Description |
-|--------|------|-------------|
-| `median_household_income` | B19013_001E | Median household income |
-
-#### B25003 — Tenure
-*Universe: Occupied housing units*
-
-| Column | Code | Description |
-|--------|------|-------------|
-| `total_occupied` | B25003_001E | Total occupied housing units |
-| `owner_occupied` | B25003_002E | Owner occupied |
-| `renter_occupied` | B25003_003E | Renter occupied |
-
-#### B25064 — Median Gross Rent
-*Universe: Occupied housing units paying rent*
-
-| Column | Code | Description |
-|--------|------|-------------|
-| `median_gross_rent` | B25064_001E | Median gross rent (dollars) |
-
-#### B25077 — Median Value
-*Universe: Owner-occupied housing units*
-
-| Column | Code | Description |
-|--------|------|-------------|
-| `median_home_value` | B25077_001E | Median value (dollars) |
-
----
+<hr style="height: 3px; background: linear-gradient(to right, #a7aecf, #550aa0); border: none;">
 
 ## Project Structure
 
 ```
 population-demographics-pipeline/
+├── .venv/                        # Root virtual environment (Flask dashboard)
+├── .gitignore
+├── .python-version
+├── CLAUDE.md                     # Project guidelines for Claude Code
 ├── README.md
-├── pyproject.toml              # Root project (dlt, dagster-dlt, etc.)
-├── .env                         # Root env (Census API key only)
-├── census_acs5_explorer.py     # Standalone Census API exploration script
-├── worldbank-data.py           # World Bank API exploration script
-├── infra/                      # Terraform (AWS resources)
+├── pyproject.toml                # Root project (Flask, awswrangler, cachetools)
+├── uv.lock
+├── justfile
+├── testing_script.py
+├── _local/                       # Local development utilities
+├── images/                       # README images (logo, screenshots)
+├── data_sources_docs/            # Documentation for each data source
+│   ├── acs_notes.md              # Census ACS variables, stability, API quirks
+│   ├── bls_laus_notes.md         # BLS LAUS labor force data
+│   ├── data_update_cadence_notes.md  # TIGER/ACS/IRS update schedules
+│   ├── irs_migration_notes.md    # IRS SOI migration data
+│   ├── irs_personal_wealth_notes.md  # IRS estate tax wealth statistics
+│   └── tiger_notes.md            # TIGER/Line GIS boundary data
+├── dagster-orch/                 # Dagster orchestration project
+│   ├── .env                      # Dagster env (CENSUS_API_KEY)
+│   ├── .env.example
+│   ├── .gitignore
+│   ├── .venv/                    # Dagster virtual environment
+│   ├── pyproject.toml
+│   ├── uv.lock
+│   ├── README.md
+│   ├── dagster_home/             # Dagster instance data
+│   ├── dbt/                      # dbt project (Athena models)
+│   │   └── population_demographics/
+│   │       ├── dbt_project.yml
+│   │       ├── profiles.yml
+│   │       ├── packages.yml
+│   │       ├── target/           # Compiled dbt artifacts (manifest.json)
+│   │       ├── dbt_packages/
+│   │       └── models/
+│   │           ├── staging/     # Staging models (views over gold tables)
+│   │           └── marts/       # Mart models (tables: socioeconomic, migration)
+│   ├── src/dagster_orch/
+│   │   ├── definitions.py       # Dagster Definitions entry point
+│   │   └── defs/census_api/    # Census API pipeline definitions
+│   │       ├── __init__.py
+│   │       ├── shared/
+│   │       │   ├── constants.py  # ACS_VARIABLES, partitions, bucket paths
+│   │       │   ├── resources.py  # Athena boto3/botocore session
+│   │       │   └── athena_query.py
+│   │       ├── bronze/          # Raw data ingestion (Census API → S3 parquet)
+│   │       │   ├── acs5/       # ACS 5-year estimates (states, counties, tracts)
+│   │       │   ├── tiger/      # TIGER/Line GIS boundaries
+│   │       │   └── irs/        # IRS migration outflows (state, county)
+│   │       ├── silver/         # Cleaned Iceberg tables (typed, partitioned)
+│   │       │   ├── acs5/
+│   │       │   ├── tiger/
+│   │       │   └── irs/
+│   │       ├── gold/           # Joined models (ACS + TIGER + IRS)
+│   │       │   ├── census/     # Gold census socioeconomic models
+│   │       │   └── irs/        # Gold IRS migration models
+│   │       └── dbt/            # dbt asset integration
+│   └── tests/
+├── dashboard/                    # Flask web dashboard (Athena-backed)
+│   ├── app_athena.py           # Flask app querying dbt mart models
+│   └── templates/
+│       └── index_athena.html   # Dashboard UI (choropleth + migration flows)
+├── infra/                       # Terraform (AWS resources)
 │   ├── main.tf
 │   ├── s3.tf
 │   ├── glue.tf
 │   ├── athena.tf
 │   └── iam.tf
-└── dagster-orch/                # Dagster orchestration project
-    ├── pyproject.toml
-    ├── src/dagster_orch/
-    │   └── defs/census_api/    # Census dlt source + pipeline
-    │       ├── loads.py
-    │       └── defs.yaml
-    └── .dlt/
-        ├── config.toml         # S3 bucket URL, parquet format
-        └── secrets.toml        # Census API key (gitignored)
+└── notebooks/                    # Jupyter notebooks (exploration, analysis)
 ```
 
-### Virtual Environments
+<hr style="height: 3px; background: linear-gradient(to right, #a7aecf, #550aa0); border: none;">
+
+## Virtual Environments
 
 This project has **two separate virtual environments** that must not be mixed:
 
 | Location | Purpose | Activation |
-|----------|---------|------------|
+|----------|---------|-------------|
 | `.venv/` (root) | Root project tools, DuckDB dashboard | `source .venv/bin/activate` |
 | `dagster-orch/.venv/` | Dagster orchestration, dbt, AWS tools | `cd dagster-orch && source .venv/bin/activate` |
 
@@ -525,7 +622,23 @@ uv run dbt run --select mart_socioeconomic_states
 
 Running commands in the wrong venv will result in `ModuleNotFoundError` or version conflicts.
 
----
+<hr style="height: 3px; background: linear-gradient(to right, #a7aecf, #550aa0); border: none;">
+
+## Potential improvements to make this project closer to "production grade"
+
+1. Adding AWS Secrets Manager, i.e. using OpenID Connect (OIDC). for API keys instead of using local credentials. Obviously a better choice because secrets are not log-lived. Also a better choice when CI/CD is used.
+2. Using CI/CD for automating deployment of all resources on cloud.
+3. RBAC for resources and users. Currently all operations are running from IAM user account with root permissions.
+4. Using three-layer VPC configuration. This is if you intend to deploy the entire infrastructure on cloud. Here's how it might look:
+    + Dagster deployment on EC2 instance `t4g.medium` with 2vCPUs and 4GBs of RAM at around $≈0.0336 per hour. 
+    + 
+
+Three layer VPC config diagram:
+5. Using dbt cloud (if preferred)
+
+
+
+<hr style="height: 3px; background: linear-gradient(to right, #a7aecf, #550aa0); border: none;">
 
 ## Conclusions about the project
 

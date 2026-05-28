@@ -14,3 +14,4 @@ models:
     marts:
       +materialized: table
       +schema: marts
+      +external_location: "s3://population-demographics-athena-results/dbt/marts/"

@@ -1,3 +1,10 @@
+{{ config(
+    materialized='table',
+    external_location='s3://population-demographics-athena-results/dbt/marts/mart_migration_flows_states',
+    partitioned_by=['survey_year'],
+    table_type='iceberg'
+) }}
+
 SELECT
     f.origin_geography_id,
     f.dest_geography_id,

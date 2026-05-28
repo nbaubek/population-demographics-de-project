@@ -1,5 +1,7 @@
 # IRS Personal Wealth Statistics — Notes
 
+*Also potential candidate for data enrichment in this pipeline*
+
 ## Source
 
 IRS Statistics of Income (SOI) Personal Wealth Statistics are published at:
