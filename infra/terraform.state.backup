@@ -1,0 +1,153 @@
+{
+  "version": 4,
+  "terraform_version": "1.14.3",
+  "serial": 32,
+  "lineage": "99c73e9c-c858-5649-f7a2-51373e6c51eb",
+  "outputs": {},
+  "resources": [
+    {
+      "mode": "managed",
+      "type": "aws_athena_workgroup",
+      "name": "main",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "arn": "arn:aws:athena:us-east-1:937492564438:workgroup/population-demographics",
+            "configuration": [
+              {
+                "bytes_scanned_cutoff_per_query": 0,
+                "enforce_workgroup_configuration": true,
+                "engine_version": [
+                  {
+                    "effective_engine_version": "Athena engine version 3",
+                    "selected_engine_version": "Athena engine version 3"
+                  }
+                ],
+                "execution_role": "",
+                "publish_cloudwatch_metrics_enabled": false,
+                "requester_pays_enabled": false,
+                "result_configuration": [
+                  {
+                    "acl_configuration": [],
+                    "encryption_configuration": [
+                      {
+                        "encryption_option": "SSE_S3",
+                        "kms_key_arn": ""
+                      }
+                    ],
+                    "expected_bucket_owner": "",
+                    "output_location": "s3://population-demographics-athena-results/results/"
+                  }
+                ]
+              }
+            ],
+            "description": "Workgroup for ACS socioeconomic modeling",
+            "force_destroy": false,
+            "id": "population-demographics",
+            "name": "population-demographics",
+            "state": "ENABLED",
+            "tags": {
+              "Environment": "dev",
+              "ManagedBy": "terraform",
+              "Project": "population-demographics"
+            },
+            "tags_all": {
+              "Environment": "dev",
+              "ManagedBy": "terraform",
+              "Project": "population-demographics"
+            }
+          },
+          "sensitive_attributes": [],
+          "identity_schema_version": 0,
+          "private": "bnVsbA==",
+          "dependencies": [
+            "aws_s3_bucket.athena_results"
+          ]
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "aws_s3_bucket",
+      "name": "athena_results",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "acceleration_status": "",
+            "acl": null,
+            "arn": "arn:aws:s3:::population-demographics-athena-results",
+            "bucket": "population-demographics-athena-results",
+            "bucket_domain_name": "population-demographics-athena-results.s3.amazonaws.com",
+            "bucket_prefix": "",
+            "bucket_regional_domain_name": "population-demographics-athena-results.s3.us-east-1.amazonaws.com",
+            "cors_rule": [],
+            "force_destroy": false,
+            "grant": [
+              {
+                "id": "e23f50cddcff60508423045a16ae8f135737de91a912f4e075a5ffddf9945830",
+                "permissions": [
+                  "FULL_CONTROL"
+                ],
+                "type": "CanonicalUser",
+                "uri": ""
+              }
+            ],
+            "hosted_zone_id": "Z3AQBSTGFYJSTF",
+            "id": "population-demographics-athena-results",
+            "lifecycle_rule": [],
+            "logging": [],
+            "object_lock_configuration": [],
+            "object_lock_enabled": false,
+            "policy": "",
+            "region": "us-east-1",
+            "replication_configuration": [],
+            "request_payer": "BucketOwner",
+            "server_side_encryption_configuration": [
+              {
+                "rule": [
+                  {
+                    "apply_server_side_encryption_by_default": [
+                      {
+                        "kms_master_key_id": "",
+                        "sse_algorithm": "AES256"
+                      }
+                    ],
+                    "bucket_key_enabled": false
+                  }
+                ]
+              }
+            ],
+            "tags": {
+              "Environment": "dev",
+              "ManagedBy": "terraform",
+              "Project": "population-demographics"
+            },
+            "tags_all": {
+              "Environment": "dev",
+              "ManagedBy": "terraform",
+              "Project": "population-demographics"
+            },
+            "timeouts": null,
+            "versioning": [
+              {
+                "enabled": false,
+                "mfa_delete": false
+              }
+            ],
+            "website": [],
+            "website_domain": null,
+            "website_endpoint": null
+          },
+          "sensitive_attributes": [],
+          "identity_schema_version": 0,
+          "private": "eyJlMmJmYjczMC1lY2FhLTExZTYtOGY4OC0zNDM2M2JjN2M0YzAiOnsiY3JlYXRlIjoxMjAwMDAwMDAwMDAwLCJkZWxldGUiOjM2MDAwMDAwMDAwMDAsInJlYWQiOjEyMDAwMDAwMDAwMDAsInVwZGF0ZSI6MTIwMDAwMDAwMDAwMH19"
+        }
+      ]
+    }
+  ],
+  "check_results": null
+}
