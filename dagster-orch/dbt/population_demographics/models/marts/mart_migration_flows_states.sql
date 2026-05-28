@@ -1,8 +1,8 @@
 {{ config(
     materialized='table',
-    external_location='s3://population-demographics-athena-results/dbt/marts/mart_migration_flows_states',
+    table_type='iceberg',
     partitioned_by=['survey_year'],
-    table_type='iceberg'
+    s3_data_dir='s3://population-demographics-athena-results/dbt/'
 ) }}
 
 SELECT

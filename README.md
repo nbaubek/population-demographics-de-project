@@ -11,14 +11,7 @@ trends, economic mobility, and population movement across states, counties, and 
 
 Little GIF demo of the platform:
 
-
-
-Other :
-![img](images/national-overview.png)
-![img](images/state-migrations.png)
-
-What information this platform supports:
-+ 
+![img]('images/')
 
 <hr style="height: 3px; background: linear-gradient(to right, #a7aecf, #550aa0); border: none;">
 
@@ -36,7 +29,6 @@ What information this platform supports:
 - [Virtual Environments](#virtual-environments)
 - [Potential improvements to make this project closer to "production grade"](#potential-improvements-to-make-this-project-closer-to-production-grade)
 - [Conclusions about the project](#conclusions-about-the-project)
-
 
 
 <hr style="height: 3px; background: linear-gradient(to right, #a7aecf, #550aa0); border: none;">
@@ -148,34 +140,64 @@ Other data sources such as "IRS SOI tax stats - Personal wealth statistics" and 
 
 ## What makes this project interesting
 
-The idea was to build a system that models *population characteristics* across geography and time. On top of that, I intended to build a *data platform* that may imitate what can be used long-term in production environments. 
+The central question: **"Understanding how demographic and economic conditions evolve spatially and relationally across regions."**
 
-**What is Data Platform?**
+Answering this requires modeling three things simultaneously — *geography*, *time*, and *demographic/economic metrics* — at progressively finer granularities (state → county → tract). A single ETL pipeline can't answer this well; a *data platform* can.
 
-At a high level:
-- A data platform is a reusable system that enables ingestion, storage, transformation, governance, and consumption of data at scale.
-    - The important word is: *reusable*
-    - A pipeline solves one task.
-    - A platform enables many future tasks.
+**What is a Data Platform?**
 
-**What challenges does this project present?**
+A data platform is a reusable system that enables ingestion, storage, transformation, governance, and consumption of data at scale. The important word is *reusable*:
+- A pipeline solves one task
+- A platform enables many future tasks (new analyses, new metrics, new datasets)
 
-1. 3 APIs, 1 of which serves as the backbone and the other 2 are for enrichment. The challenge is to achieve a coherent combination of them.
-2. Create a map dashboard with a year range slider, 5 metrics, population insights like medium household income, poverty rates etc. at a state, county, and census tract level.
+This project is designed as a platform: the medallion architecture (Bronze → Silver → Gold) separates concerns so each layer can evolve independently. Adding a new data source or metric doesn't require re-ingesting existing data.
 
-<hr style="height: 3px; background: linear-gradient(to right, #a7aecf, #550aa0); border: none;">
+**What architectural challenges does this project solve?**
 
-## What story this project uncovers
+1. **Ingesting 3 heterogeneous APIs** (Census ACS, IRS migration, TIGER/Line) into one coherent storage layer without losing fidelity or creating inconsistency
+2. **Serving interactive visualization at scale** — 84k census tracts with 13 years of data requires a storage format (Iceberg) and a rendering approach (lonboard/WebGL) that avoids sending raw geometry to the browser
+3. **Maintaining data quality across a long pipeline** — from raw API response to polished dashboard metric, with checks at every layer transition (Dagster asset checks, dbt source tests)
+4. **Balancing ad-hoc exploration with production-grade governance** — the same Athena tables power both ad-hoc SQL exploration and the production Flask dashboard
 
-**What I'm trying to achieve**
-
-> "Understanding how demographic and economic conditions evolve spatially and relationally across regions."
 
 <hr style="height: 3px; background: linear-gradient(to right, #a7aecf, #550aa0); border: none;">
 
-## Overview of the Project in Stages
+## Overview of Data Flow in Stages
 
 **Stack:** Dagster (orchestration) + AWS S3/Glue/Athena (storage/query)
+
+- **Ingestion (yellow)** — Census API, IRS SOI, and pygris/TIGER/Line all write to Bronze S3 Parquet                                     
+- **Processing (blue)** — Bronze Parquet → Silver Iceberg → Gold Iceberg (Athena)
+- **Modeling (green)** — dbt Mart models read from Gold and produce socioeconomic and migration flow tables                              
+- **Consumption (pink)** — Flask API serves GeoJSON, lonboard renders the interactive map
+
+```mermaid
+flowchart LR
+    subgraph Ingestion[" "]
+        A[Census API<br/>ACS 5-Year] --> B[Bronze<br/>S3 Parquet]
+        C[IRS SOI<br/>Migration CSV] --> B
+        D[pygris<br/>TIGER/Line] --> B
+    end
+
+    subgraph Processing[" "]
+        B --> E[Silver<br/>Athena Iceberg]
+        E --> F[Gold<br/>Athena Iceberg]
+    end
+
+    subgraph Modeling[" "]
+        F --> G[dbt Marts<br/>Socioeconomic<br/>Migration Flows]
+    end
+
+    subgraph Consumption[" "]
+        G --> H[Flask API<br/>GeoJSON]
+        H --> I[lonboard<br/>Interactive Map]
+    end
+
+    style Ingestion fill:#f9d71c,color:#000
+    style Processing fill:#b8d4f0,color:#000
+    style Modeling fill:#c1e1c1,color:#000
+    style Consumption fill:#f4b9c0,color:#000
+```
 
 ### Stage 1: Raw Data Ingestion (Bronze → S3) ✅
 
@@ -315,6 +337,9 @@ s3://population-demographics-iceberg/
 
 - **Tools:** lonboard (spatial visualization)
 - **Focus:** Spatiotemporal patterns of demographic change
+
+![img](images/national-overview.png)
+![img](images/state-migrations.png)
 
 <hr style="height: 3px; background: linear-gradient(to right, #a7aecf, #550aa0); border: none;">
 
@@ -488,7 +513,9 @@ Finished lineage graph in dbt:
 
 ![img](images/dbt-dag.png)
 
-All mart models are materialized against Amazon Athena as tables and use Glue Data Catalog for metadata layer. The materialization paths for dbt models are under `'s3://population-demographics-athena-results/dbt/marts/'`. Only marts appear in S3 as parquet files.
+All mart models are materialized against Amazon Athena as tables and use Glue Data Catalog for metadata layer. The materialization paths for dbt models are under `'s3://population-demographics-athena-results/dbt/population_demographics_gold_marts/'`. Only marts appear in S3 as parquet files along with their metadata directories.
+
+![img](images/athena-dbt.png)
 
 Database name for dbt models: "`awsdatacatalog`". To know the exact configurations, see `profiles.yml`, `dbt_project.yml`.
 
