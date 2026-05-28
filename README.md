@@ -10,7 +10,7 @@ transforms, and models **Census ACS**, **TIGER/Line**, and **IRS migration** dat
 trends, economic mobility, and population movement across states, counties, and census tracts
 **from 2012 to 2024**.
 
-Little GIF demo of the platform:
+**Little GIF demo of the platform:**
 ![img](images/dash-1.gif)
 ![img](images/dash-2.gif)
 
@@ -97,13 +97,99 @@ Little GIF demo of the platform:
 
 ## How to deploy the project
 
-+ 1. You need to clone this repo, and change into its directory. Run `uv sync` in the root directory as well as in `dagster-orch` directory. They have 2 different environments. The root environment is mainly used for testing/exploration and launching the platform (dashboard).
+### Prerequisites
 
-+ 2. Install AWS CLI locally. Then get an IAM user account on AWS and run `aws configure` command. When you run this command, it interactively prompts you to enter an AWS Access Key ID and an AWS Secret Access Key that you generated for an IAM user in the AWS Console.
+- **Clone the repo** and `cd` into it
+- **AWS CLI** — [install](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) and run `aws configure` with an IAM user's Access Key + Secret Access Key
+- **Terraform** >= 1.0 — [install](https://developer.hashicorp.com/terraform/install)
+- **uv** — the project uses `uv` for all package management and command execution (no bare `python` or `pip`)
+- **Census API key** — required to ingest ACS data (free, get one [here](https://api.census.gov/data/key_signup.html))
 
-+ 3. ACS data source requires an API key (more details in "API access" subsection of "Data Sources" section).
+### 1. Install dependencies
 
-+ 4. You need to have Terraform installed on your machine in order to run the cloud infrastructure required for this project.
+```bash
+uv sync                  # root environment (Flask dashboard)
+cd dagster-orch && uv sync  # Dagster environment
+```
+
+### 2. Configure credentials
+
+**AWS** — already done via `aws configure` above.
+
+**Census API key** — create `dagster-orch/.env` from the example:
+
+```bash
+cp dagster-orch/.env.example dagster-orch/.env
+# Edit .env and set CENSUS_API_KEY=your_key_here
+```
+
+### 3. Deploy AWS infrastructure
+
+```bash
+cd infra
+terraform init
+terraform apply
+```
+
+This provisions S3 buckets, Glue databases, Athena workgroup, and IAM roles. Note the Terraform outputs — you'll need the bucket names and workgroup name for the dbt profile.
+
+### 4. Configure dbt profiles
+
+Edit `dagster-orch/dbt/population_demographics/profiles.yml` and update the `s3_staging_dir` and `s3_data_discovery` paths if you changed the default `bucket_name` variable in Terraform (default: `population-demographics`).
+
+### 5. Start Dagster
+
+```bash
+cd dagster-orch
+source .venv/bin/activate
+uv run dg dev
+```
+
+Open the Dagster UI at `http://localhost:3000`.
+
+### 6. Backfill data
+
+In the Dagster UI, materialization is triggered per-partition. To backfill a range of years:
+
+- Go to **Overview → Assets** and select the assets to backfill
+- Use the **Materialize selected** button and choose a year range
+- **Limit to 6 year partitions at a time** — Athena has a `bytes_scanned_cutoff_per_query` guardrail of 1 GB per query. Ingesting many years simultaneously can hit this limit on large assets (e.g., tracts with ~84k rows). Six years is a safe batch size that keeps queries under the 1 GB threshold.
+
+### 7. Run dbt models
+
+Once silver assets are populated, build the mart models:
+
+```bash
+cd dagster-orch
+source .venv/bin/activate
+uv run dbt run
+```
+
+### 8. Launch the dashboard
+
+```bash
+cd dagster-orch
+source .venv/bin/activate
+uv run flask --app dashboard/app run --debug
+```
+
+Dashboard will be at `http://localhost:5000`.
+
+---
+
+### Important reminders
+
+- **Always use `uv run`** — never call `flask`, `dbt`, or `dg` directly without `uv run`. This ensures the correct version of each tool from the activated venv.
+- **Activate the correct venv** — root `.venv` for the dashboard, `dagster-orch/.venv` for Dagster and dbt commands.
+- **Destroy AWS infrastructure when done** — to avoid ongoing charges:
+
+```bash
+cd infra && terraform destroy
+```
+
+<strong>Do not</strong> skip this step. S3, Glue, and Athena will continue incurring costs if left running.
+
+<strong>Never</strong> commit `dagster-orch/.env` to version control — it contains your Census API key.
 
 
 <hr style="height: 3px; background: linear-gradient(to right, #a7aecf, #550aa0); border: none;">
@@ -759,6 +845,10 @@ Running commands in the wrong venv will result in `ModuleNotFoundError` or versi
 + **Dagster deployment** — Replace local `dg dev` with a proper deployment on an EC2 instance (e.g., `t4g.medium` at ~$0.03/hr) or a containerized setup behind a load balancer. This removes the dependency on a developer's laptop staying online.
 
 + **dbt Cloud** — An alternative to self-managed dbt Core if a hosted experience with built-in scheduling, IDE, and alerting is preferred.
+
++ **Unit tests with pytest** — Dagster supports testing assets, jobs, sensors, and definitions. Use `dagster.build_asset_context()` for asset tests and `unittest.mock` to stub external dependencies (API calls, Athena queries). Tests go in `dagster-orch/tests/`.
+
++ **Iceberg compaction** — Frequent INSERT/DELETE operations accumulate many small data files, degrading query performance over time. Athena supports `OPTIMIZE` or Iceberg's `rewrite_data_files` API to compact files. Schedule monthly or trigger from Dagster after large backfills.
 
 ### Observability
 
