@@ -669,6 +669,49 @@ Finished lineage graph in dbt:
 
 ![img](images/dbt-dag.png)
 
+### Modeling Approach: Wide Snapshot Marts, Not a Classic Star Schema
+
+The gold-layer marts in this project follow a **One Big Table (OBT) pattern** rather than a
+traditional Kimball star schema with separate fact and dimension tables. Geography attributes
+(name, FIPS codes) live directly in each mart alongside the metrics, rather than in a standalone
+`dim_geography` joined by a key.
+
+This is a deliberate trade-off given the project's access patterns, not an oversight:
+- Each mart is queried almost entirely by that geography level's own attributes (e.g., the
+  dashboard always filters `state_fips = ?` within a `mart_socioeconomic_counties` row) — there's
+  no cross-mart join where a shared dimension would pay for itself
+- Athena is billed by bytes scanned; joining against a separate geography dimension adds I/O cost
+  for attributes that are static per row anyway
+- With five marts total, the number of places `geography_name` would need updating stays small, so
+  the usual "single source of truth" argument for normalizing a dimension carries less weight here
+  than it would at larger scale
+
+**Grain**
+
+- `mart_socioeconomic_states / _counties / _tracts` — one row per **(geography, survey_year)**, a
+  **periodic snapshot fact**. Every year is a fresh, fully-populated row, not a delta or an update
+  to an existing one.
+- `mart_migration_flows_states / _counties` — one row per **(origin_geography_id,
+  dest_geography_id, survey_year)**, structurally closer to a **factless fact / bridge table**:
+  there's no single "subject" being measured, the row itself represents a relationship (a flow
+  between two geographies) carrying measures (households, individuals, AGI).
+
+**Why periodic snapshot instead of SCD Type 2**
+
+TIGER/Line geographic boundaries genuinely change year over year (redistricting, county line
+adjustments) — exactly the kind of change SCD Type 2 exists to handle on a dimension table. But
+because each mart is re-ingested as a full snapshot per year rather than updated in place, that
+history is captured for free: the 2019 row for a given tract carries that year's boundary and
+attributes, and the 2020 row carries whatever changed, with no need to version a separate
+dimension row or maintain effective-date columns. SCD Type 2 solves the problem of losing history
+when a dimension is overwritten — a periodic snapshot fact never creates that problem, since
+nothing is ever overwritten; each year is additive.
+
+The trade-off: this only works because a full re-pull of Census/TIGER/IRS data each year is both
+available and cheap enough to redo. If ingestion were expensive or the source only exposed deltas
+instead of full snapshots, a proper `dim_geography` with SCD Type 2 tracking would be the right
+call instead.
+
 All mart models are materialized against Amazon Athena as tables and use Glue Data Catalog for metadata layer. The materialization paths for dbt models are under `'s3://population-demographics-athena-results/dbt/population_demographics_gold_marts/'`. Only marts appear in S3 as parquet files along with their metadata directories.
 
 ![img](images/athena-dbt.png)
